@@ -124,7 +124,9 @@ export default function Account() {
     finally { mutation.current=false; setBusy(false); }
   }
   async function rpc(name:string,args:Record<string,unknown>={}) {
-    const result = await client.rpc(name,args); if(result.error) throw new Error(result.error.message); return result.data;
+    const result = await client.rpc(name,args); if(result.error) throw new Error(result.error.message);
+    if(result.data && typeof result.data==='object' && 'error' in result.data) throw new Error(String(result.data.error));
+    return result.data;
   }
   function auth(event:FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget);
@@ -161,7 +163,7 @@ export default function Account() {
     if(!pendingBid.current || pendingBid.current.auction!==auction || pendingBid.current.amount!==amount) pendingBid.current={auction,amount,id:crypto.randomUUID()};
     const request=pendingBid.current;
     void run(async()=>{
-      const result=await rpc("ir_bid",{p_auction:auction,p_max:amount,p_request:request.id}) as {leading:boolean};
+      const result=await rpc("ir_submit_bid",{p_auction:auction,p_max:amount,p_request:request.id}) as {leading:boolean};
       pendingBid.current=null; window.alert(result.leading?"Your bid was accepted and you are leading.":"Accepted. Another bidder’s maximum remains higher.");
     },"Bid confirmed");
   }
