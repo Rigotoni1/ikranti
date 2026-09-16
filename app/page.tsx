@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- auction media is uploaded or catalogued at runtime */
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { browserClient } from "../lib/supabase/browser";
 
 type Auction = {
   id: string; sellerId: string; sellerName: string; title: string; category: string;
@@ -50,6 +51,7 @@ function Countdown({ endAt }: { endAt:string }) {
 function Mark() { return <span className="mark" aria-hidden="true">I</span>; }
 
 export default function Home() {
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [data, setData] = useState<MarketplaceData>(emptyData);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -66,16 +68,23 @@ export default function Home() {
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
 
+  useEffect(() => {
+    // Presentation only: all private actions remain authorized by the account API.
+    // INITIAL_SESSION restores the same cookie-backed session used by /account.
+    const { data: { subscription } } = browserClient().auth.onAuthStateChange((_event, session) => {
+      setSignedIn(Boolean(session?.user));
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     window.localStorage.removeItem("ikranti-demo-profile");
-    const saved = null;
     const requestedLot = new URLSearchParams(window.location.search).get("lot");
     const version = ++requestVersion.current;
     let active = true;
-    fetch(`/api/marketplace?user=${encodeURIComponent(saved || "buyer_01")}`, { cache:"no-store" })
+    fetch("/api/marketplace", { cache:"no-store" })
       .then((response) => response.ok ? response.json() as Promise<MarketplaceData> : Promise.reject(new Error("Marketplace unavailable")))
-      .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); if (saved) setProfile(next.user); if (requestedLot) setSelectedId(requestedLot); } })
+      .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); if (requestedLot) setSelectedId(requestedLot); } })
       .catch(() => { if (active) setServiceError("The auction service is unavailable. Displaying the sample catalogue."); });
     return () => { active = false; };
   }, []);
@@ -94,6 +103,7 @@ export default function Home() {
   const signOut = () => { window.localStorage.removeItem("ikranti-demo-profile"); setProfile(null); setAccountOpen(false); notify("You’re now browsing as a guest."); };
 
   const perform = async (payload:Record<string, unknown>) => {
+    if (signedIn) { window.location.assign("/account"); return null; }
     if (!profile) { setAuthOpen(true); return null; }
     if (mutationPending.current) return null;
     mutationPending.current = true;
@@ -124,7 +134,7 @@ export default function Home() {
     setSelectedId(id); if (lot) setMaxBid(String(lot.currentBid + bidStep(lot.currentBid)));
   };
 
-  const openSell = () => { if (!profile) setAuthOpen(true); else setSellOpen(true); };
+  const openSell = () => { window.location.assign("/account"); };
 
   return (
     <main id="top">
@@ -133,7 +143,7 @@ export default function Home() {
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell</button><a href="#how">How it works</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
-          {profile ? <button className="profileButton" onClick={() => setAccountOpen(true)}><span>{profile.initials}</span><b>{profile.name.split(" ")[0]}</b></button> : <button className="textButton" onClick={() => setAuthOpen(true)}>Sign in</button>}
+          <a className="textButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? "My account" : "Sign in"}</a>
           <button className="goldButton" onClick={openSell}>Sell an asset</button>
         </div>
       </header>
@@ -152,7 +162,7 @@ export default function Home() {
 
       <section className="auctionSection shell" id="auctions">
         <div className="sectionHead"><div><p className="eyebrow dark"><span/> CURATED FOR DISCERNING BUYERS</p><h2>Live now</h2></div><p>{filtered.length} exceptional assets open for bidding</p></div>
-        <div className="previewNotice" role="note">{data.isPreview!==false?"Sample catalogue · No real sales or payments.":"Approved catalogue · Pre-launch access."} <a href="/account">Register your own account or apply to sell →</a></div>
+        <div className="previewNotice" role="note">{data.isPreview!==false?"Sample catalogue · No real sales or payments.":"Approved catalogue · Pre-launch access."} <a href="/account">{signedIn ? "Manage your account or apply to sell →" : "Register your own account or apply to sell →"}</a></div>
         {serviceError && <p role="alert">{serviceError}</p>}
         <div className="marketToolbar">
           <div className="categoryTabs" role="tablist" aria-label="Auction categories">
@@ -216,7 +226,7 @@ export default function Home() {
             <p className="lotCategory">{selected.category.toUpperCase()}</p><h2>{selected.title}</h2><p className="location">⌖ {selected.location} · Offered by <b>{selected.sellerName}</b> ✓</p>
             <div className="panelStats"><div><small>CURRENT BID</small><strong>{euro.format(selected.currentBid)}</strong></div><div><small>TIME REMAINING</small><b><Countdown endAt={selected.endAt}/></b></div><div><small>BID ACTIVITY</small><b>{selected.bidCount} bids</b></div></div>
             <div className={`reserve ${!reserveIsMet ? "pending" : ""}`}><span>{!reserveIsMet ? "◇" : "✓"}</span><div><b>{!reserveExists ? "Offered without reserve" : reserveIsMet ? "Reserve met" : "Reserve not yet met"}</b><small>{!reserveExists || reserveIsMet ? "In a real auction, a winning bid would also be subject to the applicable sale terms." : "The seller’s confidential minimum has not yet been reached."}</small></div></div>
-            <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required/></label><button className="goldButton large" disabled={busy}>{busy ? "Placing bid…" : profile ? "Place secure bid" : "Sign in to bid"}</button></form>
+            <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required/></label><button className="goldButton large" disabled={busy || signedIn === null}>{busy ? "Placing bid…" : signedIn === null ? "Checking account…" : signedIn ? "Open auction dashboard" : "Sign in to bid"}</button></form>
             <p className="proxyNote">We bid only as much as needed on your behalf. The next minimum is {euro.format(selected.currentBid + bidStep(selected.currentBid))}. Preview bids do not create a purchase obligation.</p>
             <div className="feePreview"><span><small>WINNING BID</small>{euro.format(selected.currentBid)}</span><b>+</b><span><small>BUYER FEE</small>{euro.format(selectedFee)}</span><b>=</b><span><small>ESTIMATED TOTAL</small>{euro.format(selected.currentBid + selectedFee)}</span></div>
             <div className="panelActions"><button onClick={() => toggleWatch(selected.id)}>{data.watched.includes(selected.id) ? "◆ Watching" : "◇ Add to watchlist"}</button><button onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/?lot=${encodeURIComponent(selected.id)}#auctions`); notify("Link copied."); } catch { notify("Copy the lot title to share this sample auction."); } }}>↗ Share lot</button><button onClick={() => notify("Viewings are not available for sample assets.")}>⌁ Arrange viewing</button></div>
