@@ -23,40 +23,53 @@ test('home page renders the auction marketplace and its preview status', async (
   assert.match(html, /Irkanti — Malta/);
   assert.match(html, /IRKANTI/);
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
-  assert.match(html, /Demonstration marketplace/);
+  assert.match(html, /Sample catalogue/);
   assert.match(html, /Sell an asset/);
 });
 
-test('Supabase-backed catalog and buyer profile are available, without confidential reserves', async () => {
+test('catalogue is public and never accepts a browser-selected account', async () => {
   const response=await fetch(`${base}/api/marketplace?user=buyer_01`);
   assert.equal(response.status,200);
   const result=await response.json();
-  assert.equal(result.user.id,'buyer_01');
+  assert.equal(result.user,null);
+  assert.deepEqual(result.myLots,[]);
+  assert.deepEqual(result.watched,[]);
   assert.ok(result.auctions.length>=8);
   assert.ok(result.auctions.every(lot=>typeof lot.currentBid==='number' && typeof lot.reserveMet==='boolean'));
   assert.ok(result.auctions.every(lot=>!Object.hasOwn(lot,'reservePrice')));
 });
 
-test('seller owns the sample inventory', async () => {
+test('forged seller identity does not expose private inventory', async () => {
   const response=await fetch(`${base}/api/marketplace?user=seller_01`);
   assert.equal(response.status,200);
   const result=await response.json();
-  assert.equal(result.user.role,'seller');
-  assert.ok(result.myLots.some(lot=>lot.status==='under_review'));
-  assert.ok(result.myLots.every(lot=>lot.sellerId==='seller_01'));
+  assert.equal(result.user,null);
+  assert.deepEqual(result.myLots,[]);
 });
 
 test('invalid bids and unknown users are rejected without changing auction state', async () => {
   const request=body=>fetch(`${base}/api/marketplace`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  assert.equal((await request({action:'bid',userId:'buyer_01',auctionId:'jaguar-e-type',maxAmount:1})).status,400);
-  assert.equal((await request({action:'bid',userId:'seller_01',auctionId:'rolex-daytona',maxAmount:999999})).status,400);
-  assert.equal((await request({action:'bid',userId:'unknown',auctionId:'rolex-daytona',maxAmount:999999})).status,403);
+  assert.equal((await request({action:'bid',userId:'buyer_01',auctionId:'jaguar-e-type',maxAmount:1})).status,410);
+  assert.equal((await request({action:'bid',userId:'seller_01',auctionId:'rolex-daytona',maxAmount:999999})).status,410);
+  assert.equal((await request({action:'bid',userId:'unknown',auctionId:'rolex-daytona',maxAmount:999999})).status,410);
 });
 
 test('malformed payloads are rejected at the API boundary', async () => {
   for (const body of ['null', '[]', '"invalid"', '{']) {
     const response = await fetch(`${base}/api/marketplace`, {method:'POST',headers:{'content-type':'application/json'},body});
-    assert.equal(response.status,400);
+    assert.equal(response.status,410);
   }
-  assert.equal((await fetch(`${base}/api/media`,{method:'POST',body:'not multipart'})).status,400);
+  assert.equal((await fetch(`${base}/api/media`,{method:'POST',body:'not multipart'})).status,410);
+});
+
+test('secure account portal is available',async()=>{
+  const response=await fetch(`${base}/account`);
+  assert.equal(response.status,200);
+  assert.match(await response.text(),/YOUR MARKETPLACE ACCOUNT/);
+  assert.match(response.headers.get('cache-control'),/no-store/);
+});
+
+test('private upload endpoint rejects cross-origin and unauthenticated requests',async()=>{
+  assert.equal((await fetch(`${base}/api/account/upload`,{method:'POST',headers:{origin:'https://attacker.invalid'}})).status,403);
+  assert.equal((await fetch(`${base}/api/account/upload`,{method:'POST',headers:{origin:base}})).status,401);
 });

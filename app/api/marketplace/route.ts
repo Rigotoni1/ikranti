@@ -55,22 +55,24 @@ async function callMarketplace(payload: Record<string, unknown>) {
   }
 }
 
-export async function GET(request: Request) {
-  const userId = new URL(request.url).searchParams.get("user") || "buyer_01";
-  return callMarketplace({ action: "read", userId });
+export async function GET() {
+  const client = createClient(supabaseUrl,supabaseKey,{auth:{persistSession:false}});
+  const {data,error}=await client.from("ir_public_auctions").select("*").eq("status","live").order("end_at");
+  if(error) return Response.json({error:"Catalogue unavailable"},{status:503});
+  const common={user:null,watched:[],myLots:[],recentBids:[],categories:["Property","Motor Cars","Boats","Watches & Jewellery","Art & Antiques","Collectables"]};
+  if(data?.length) return Response.json({...common,isPreview:false,auctions:data.map(l=>({
+    id:l.id,sellerId:"",sellerName:"Verified Irkanti seller",title:l.title,description:l.description,category:l.category,location:l.location,
+    image:l.image_path?`${supabaseUrl}/storage/v1/object/public/ir-auction-images/${l.image_path}`:"/og.png",startPrice:Number(l.start_price),currentBid:Number(l.current_bid),
+    hasReserve:l.has_reserve,reserveMet:l.reserve_met,highestBidderId:null,bidCount:l.bid_count,endAt:l.end_at,status:l.status,featured:false,views:0,watchCount:0,
+  }))},{headers:{"Cache-Control":"no-store"}});
+  const preview=await callMarketplace({action:"read",userId:"buyer_01"});
+  if(!preview.ok) return preview;
+  const body=await preview.json() as {auctions:unknown[]};
+  return Response.json({...common,isPreview:true,auctions:body.auctions},{headers:{"Cache-Control":"no-store"}});
 }
 
-export async function POST(request: Request) {
-  let payload: unknown;
-  try {
-    const raw = await request.text();
-    if (raw.length > 32_000) return Response.json({ error: "The request is too large." }, { status: 413 });
-    payload = JSON.parse(raw);
-  } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400 });
-  }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return Response.json({ error: "Invalid request." }, { status: 400 });
-  }
-  return callMarketplace(payload as Record<string, unknown>);
+export async function POST() {
+  return Response.json({ error: "Shared demonstration accounts have been retired. Sign in at /account." }, { status: 410 });
 }
+import { createClient } from "@supabase/supabase-js";
+import { supabaseKey, supabaseUrl } from "@/lib/supabase/config";

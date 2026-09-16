@@ -14,13 +14,7 @@ type Auction = {
 
 type Profile = { id: string; name: string; initials: string; email: string; role: "buyer" | "seller" | "admin"; verified: boolean };
 type BidEvent = { auction_id: string; visible_amount: number; created_at: string; initials: string };
-type MarketplaceData = { user: Profile | null; auctions: Auction[]; watched: string[]; myLots: Auction[]; recentBids: BidEvent[]; categories: string[] };
-
-const demoProfiles = [
-  { id: "buyer_01", name: "Lara Vella", initials: "LV", role: "buyer", detail: "Buyer · demo account" },
-  { id: "seller_01", name: "Marc Camilleri", initials: "MC", role: "seller", detail: "Seller · demo account" },
-  { id: "collector_01", name: "Elena Borg", initials: "EB", role: "buyer", detail: "Collector · demo account" },
-] as const;
+type MarketplaceData = { user: Profile | null; auctions: Auction[]; watched: string[]; myLots: Auction[]; recentBids: BidEvent[]; categories: string[]; isPreview?:boolean };
 
 const fallbackLots: Auction[] = [
   { id:"jaguar-e-type",sellerId:"seller_auto",sellerName:"Mdina Motor House",title:"1967 Jaguar E-Type Series 1",category:"Motor Cars",location:"Naxxar, Malta",description:"A beautifully preserved Series 1 roadster in British Racing Green. Matching numbers, Maltese registered and accompanied by an extensive history file. Independent inspection available by appointment.",image:"https://images.unsplash.com/photo-1553440569-bcc63803a83d?auto=format&fit=crop&w=1600&q=90",startPrice:72000,reservePrice:82000,currentBid:84500,highestBidderId:"collector_01",bidCount:23,endAt:new Date(Date.now()+112000000).toISOString(),status:"live",featured:true,views:1240,watchCount:48 },
@@ -72,22 +66,10 @@ export default function Home() {
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
 
-  const load = async (userId = "buyer_01", activate = false) => {
-    const version = ++requestVersion.current;
-    try {
-      const response = await fetch(`/api/marketplace?user=${encodeURIComponent(userId)}`, { cache:"no-store" });
-      if (!response.ok) throw new Error("Marketplace unavailable");
-      const next = await response.json() as MarketplaceData;
-      if (version !== requestVersion.current) return false;
-      setData(next);
-      setServiceError("");
-      if (activate) setProfile(next.user);
-      return true;
-    } catch { setServiceError("The auction service is unavailable. Please try again shortly."); return false; }
-  };
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("ikranti-demo-profile");
+    window.localStorage.removeItem("ikranti-demo-profile");
+    const saved = null;
     const requestedLot = new URLSearchParams(window.location.search).get("lot");
     const version = ++requestVersion.current;
     let active = true;
@@ -97,22 +79,6 @@ export default function Home() {
       .catch(() => { if (active) setServiceError("The auction service is unavailable. Displaying the sample catalogue."); });
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    let active = true;
-    let refreshing = false;
-    const timer = window.setInterval(() => {
-      if (refreshing || mutationPending.current || document.visibilityState !== "visible") return;
-      refreshing = true;
-      const version = requestVersion.current;
-      fetch(`/api/marketplace?user=${encodeURIComponent(profile?.id || "buyer_01")}`, { cache:"no-store" })
-        .then((response) => response.ok ? response.json() as Promise<MarketplaceData> : Promise.reject(new Error("Refresh failed")))
-        .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); } })
-        .catch(() => { if (active && version === requestVersion.current) setServiceError("Live updates are delayed. Refresh before placing a bid."); })
-        .finally(() => { refreshing = false; });
-    }, 10000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [profile?.id]);
 
   const selected = data.auctions.find((lot) => lot.id === selectedId) || null;
   const reserveIsMet = selected ? (selected.reserveMet ?? (selected.reservePrice ?? 0) <= selected.currentBid) : false;
@@ -125,12 +91,6 @@ export default function Home() {
   }), [data.auctions, category, query]);
 
   const notify = (message:string) => { setToast(message); window.setTimeout(() => setToast(""), 3800); };
-  const chooseProfile = async (id:string) => {
-    setBusy(true); const signedIn = await load(id, true); setBusy(false);
-    if (!signedIn) { notify("Unable to sign in. Please try again."); return; }
-    window.localStorage.setItem("ikranti-demo-profile", id);
-    setAuthOpen(false); notify("Signed in to your preview account.");
-  };
   const signOut = () => { window.localStorage.removeItem("ikranti-demo-profile"); setProfile(null); setAccountOpen(false); notify("You’re now browsing as a guest."); };
 
   const perform = async (payload:Record<string, unknown>) => {
@@ -192,7 +152,7 @@ export default function Home() {
 
       <section className="auctionSection shell" id="auctions">
         <div className="sectionHead"><div><p className="eyebrow dark"><span/> CURATED FOR DISCERNING BUYERS</p><h2>Live now</h2></div><p>{filtered.length} exceptional assets open for bidding</p></div>
-        <div className="previewNotice" role="note">Demonstration marketplace · Sample assets and shared preview accounts · No real sales or payments.</div>
+        <div className="previewNotice" role="note">{data.isPreview!==false?"Sample catalogue · No real sales or payments.":"Approved catalogue · Pre-launch access."} <a href="/account">Register your own account or apply to sell →</a></div>
         {serviceError && <p role="alert">{serviceError}</p>}
         <div className="marketToolbar">
           <div className="categoryTabs" role="tablist" aria-label="Auction categories">
@@ -244,7 +204,7 @@ export default function Home() {
 
       <section className="numbers"><div className="shell"><div><strong>{data.auctions.length}</strong><span>SAMPLE AUCTIONS</span></div><div><strong>3</strong><span>PREVIEW ACCOUNTS</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>ASSET CATEGORIES</span></div></div></section>
 
-      <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Try the seller submission flow using sample details. Please do not upload personal documents or private information to a shared preview account.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
+      <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Create your own account and apply to sell. Identity, ownership and category-specific documents are reviewed privately before a listing is approved.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
 
       <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Demonstration of a Malta-focused auction marketplace.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Preview edition</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Marketplace preview</span><div><button onClick={() => setInformation("terms")}>Terms</button><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
 
@@ -266,12 +226,12 @@ export default function Home() {
         </div>
       </div>}
 
-      {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><p className="eyebrow dark"><span/> PREVIEW ACCESS</p><h2>Choose an account</h2><p>Explore the complete buyer and seller experience using one of the populated demonstration profiles.</p><div className="profileChoices">{demoProfiles.map((item) => <button key={item.id} onClick={() => chooseProfile(item.id)} disabled={busy}><span>{item.initials}</span><div><b>{item.name}</b><small>{item.detail}</small></div><i>→</i></button>)}</div><small className="demoNote">These preview profiles contain fictional demonstration data. Production identity verification will replace them at launch.</small></div></div>}
+      {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><h2>Your Irkanti account</h2><p>Register or sign in securely with your own email address. Shared preview accounts have been retired. These sample assets cannot receive bids.</p><a className="goldButton" href="/account">Register or sign in →</a></div></div>}
 
       {accountOpen && profile && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Your account"><div className="accountModal"><button className="close" onClick={() => setAccountOpen(false)} aria-label="Close">×</button><div className="accountHead"><span>{profile.initials}</span><div><p>{profile.role === "seller" ? "SELLER CONCIERGE" : "PRIVATE CLIENT"}</p><h2>Welcome, {profile.name.split(" ")[0]}.</h2><small>Shared demonstration profile · {profile.email}</small></div></div>{profile.role === "seller" ? <SellerDashboard lots={data.myLots} onSell={() => {setAccountOpen(false);setSellOpen(true)}}/> : <BuyerDashboard lots={data.auctions.filter((lot) => data.watched.includes(lot.id) || lot.highestBidderId === profile.id)} userId={profile.id} watchedCount={data.watched.length} openLot={(id) => {setAccountOpen(false);openLot(id)}}/>}<div className="accountFooter"><button onClick={() => {setAccountOpen(false);setAuthOpen(true)}}>Switch preview account</button><button onClick={signOut}>Sign out</button></div></div></div>}
 
       {sellOpen && profile && <ListingModal profile={profile} categories={data.categories} busy={busy} close={() => setSellOpen(false)} submit={async (payload) => {const result=await perform({action:"createListing",...payload});if(result){setSellOpen(false);notify(result.message || "Asset submitted.");if(profile.role === "seller") setAccountOpen(true);}}}/>} 
-      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> DEMONSTRATION EDITION</p><h2>{information === "terms" ? "About this preview" : information === "privacy" ? "Your preview data" : "Local preferences"}</h2><p>{information === "terms" ? "All catalogue assets and supplied identities are fictional. Bids are non-binding demonstrations. Fees are illustrative estimates. No payment, ownership transfer, authentication or identity verification service is provided. Launch terms must be completed before real trading." : information === "privacy" ? "The preview saves sample bids, watchlists, submissions and uploaded photographs in Supabase. Preview accounts are shared: other visitors can access their activity. Upload only sample content, never identity documents, private contact details or other sensitive information." : "The site stores your chosen preview profile in this browser’s local storage so it survives a reload. Sign out to remove that preference. No advertising cookies are required by this preview."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
+      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> DEMONSTRATION EDITION</p><h2>{information === "terms" ? "About this preview" : information === "privacy" ? "Your preview data" : "Local preferences"}</h2><p>{information === "terms" ? "The sample catalogue is illustrative and is not available for purchase. Individual accounts and private seller review are available in pre-launch access. Real bidding and payments remain disabled pending launch checks. Fees shown on sample assets are examples; final launch terms are not yet published." : information === "privacy" ? "Individual account data and private seller documents are stored in Supabase. Documents are accessible to their owner and two-factor-authenticated administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. During testing, use sample documents only." : "Secure account access uses essential session cookies. Shared preview profiles have been retired. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
       {toast && <div className="toast" role="status"><span>◇</span>{toast}</div>}
     </main>
   );
