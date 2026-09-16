@@ -6,6 +6,7 @@ import Link from "next/link";
 import { browserClient } from "@/lib/supabase/browser";
 import { supabaseUrl } from "@/lib/supabase/config";
 import "./portal.css";
+import { Onboarding, AccountType, OnboardingRecord } from "./onboarding";
 
 type Row = Record<string, string | number | boolean | null>;
 const categories = ["Property","Motor Cars","Boats","Watches & Jewellery","Art & Antiques","Collectables"];
@@ -18,6 +19,10 @@ export default function Account() {
   const [user,setUser] = useState<User|null>(null);
   const [ready,setReady] = useState(false);
   const [mode,setMode] = useState("signin");
+  const [signupType,setSignupType] = useState<AccountType|null>(null);
+  const [onboardingType,setOnboardingType] = useState<AccountType|null>(null);
+  const [onboarding,setOnboarding] = useState<OnboardingRecord[]>([]);
+  const [favourites,setFavourites] = useState<string[]>([]);
   const [tab,setTab] = useState("Auctions");
   const [message,setMessage] = useState("");
   const [busy,setBusy] = useState(false);
@@ -39,6 +44,7 @@ export default function Account() {
   const [adminInvite,setAdminInvite] = useState(false);
   const [delivery,setDelivery] = useState<Record<string,number>|null>(null);
   const loading = useRef(0);
+  const initialOnboardingUser = useRef<string|null>(null);
   const mutation = useRef(false);
   const pendingBid = useRef<{auction:string;amount:number;id:string}|null>(null);
 
@@ -65,19 +71,29 @@ export default function Account() {
       client.auth.mfa.getAuthenticatorAssuranceLevel(),
       client.auth.mfa.listFactors(),
       client.rpc("ir_admin_invitation_status"),
+      client.from("ir_account_onboarding").select("*").eq("user_id",current.id),
+      client.from("ir_favourites").select("auction_id").eq("user_id",current.id),
     ]);
     if (version!==loading.current) return;
     const error = results.find(r=>r.error)?.error;
     if (error) throw new Error(error.message);
     setProfile(results[0].data); setLots(results[1].data||[]); setDocuments(results[2].data||[]);
-    setNotifications(results[3].data||[]); setOrders(results[4].data||[]); setMaxima(results[5].data||[]);
+    setNotifications(results[3].data||[]); setOrders((results[4].data||[]).filter(o=>results[0].data?.active_account==="seller"?o.seller_id===current.id:results[0].data?.active_account==="buyer"?o.buyer_id===current.id:false)); setMaxima(results[5].data||[]);
     setWatched((results[6].data||[]).map(r=>r.auction_id)); setApplication(results[7].data);
     setAal(results[8].data?.currentLevel||"aal1");
     setAdminInvite(Boolean(results[10].data));
+    setOnboarding((results[11].data||[]) as OnboardingRecord[]);
+    setFavourites((results[12].data||[]).map(r=>String(r.auction_id)));
+    if(initialOnboardingUser.current!==current.id){
+      initialOnboardingUser.current=current.id;
+      const intent=current.user_metadata?.onboarding_intent;
+      // User-editable metadata is only a navigation hint, never an access grant.
+      if((intent==="buyer"||intent==="seller")&&!(results[11].data||[]).some(o=>o.completed_at))setOnboardingType(intent);
+    }
     setFactor(current=>results[9].data?.totp.find(f=>f.status==="verified")?.id||current||results[9].data?.all.find(f=>f.factor_type==="totp")?.id||"");
     if (results[0].data?.role==="admin" && results[8].data?.currentLevel==="aal2") {
-      const tables = ["ir_seller_applications","ir_auctions","ir_profiles","ir_disputes","ir_risk_flags","ir_audit","ir_documents"];
-      const values = await Promise.all(tables.map(t=>client.from(t).select("*").order(t==="ir_seller_applications"?"submitted_at":"created_at",{ascending:false}).limit(200)));
+      const tables = ["ir_seller_applications","ir_account_onboarding","ir_auctions","ir_profiles","ir_disputes","ir_risk_flags","ir_audit","ir_documents"];
+      const values = await Promise.all(tables.map(t=>client.from(t).select("*").order(t==="ir_seller_applications"?"submitted_at":t==="ir_account_onboarding"?"updated_at":"created_at",{ascending:false}).limit(200)));
       if (version!==loading.current) return;
       if (values.some(v=>v.error)) throw new Error("Some administration data could not be loaded.");
       setStaff(Object.fromEntries(tables.map((t,i)=>[t,values[i].data||[]])));
@@ -97,7 +113,7 @@ export default function Account() {
     safeRefresh();
     const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
       if (event==="PASSWORD_RECOVERY") setMode("password");
-      if (event==="SIGNED_OUT") { setFactor(""); setQr(""); setDelivery(null); setStaff({}); }
+      if (event==="SIGNED_OUT") { setFactor(""); setQr(""); setDelivery(null); setStaff({});setOnboardingType(null);setOnboarding([]);setFavourites([]);initialOnboardingUser.current=null; }
       // Avoid invoking auth methods inside Supabase's synchronous auth callback.
       window.setTimeout(safeRefresh,0);
     });
@@ -133,7 +149,8 @@ export default function Account() {
     void run(async()=>{
       const email=field(data,"email"); const password=field(data,"password");
       const redirect = `${window.location.origin}/auth/confirm`;
-      const result = mode==="signup" ? await client.auth.signUp({email,password,options:{data:{name:field(data,"name")},emailRedirectTo:redirect}})
+      if(mode==="signup"&&!signupType)throw new Error("Choose a buyer or seller account first.");
+      const result = mode==="signup" ? await client.auth.signUp({email,password,options:{data:{name:field(data,"name"),onboarding_intent:signupType},emailRedirectTo:redirect}})
         : mode==="recovery" ? await client.auth.resetPasswordForEmail(email,{redirectTo:`${redirect}?recovery=1`})
         : mode==="password" ? await client.auth.updateUser({password}) : await client.auth.signInWithPassword({email,password});
       if(result.error) throw new Error(result.error.message);
@@ -167,7 +184,15 @@ export default function Account() {
       pendingBid.current=null; window.alert(result.leading?"Your bid was accepted and you are leading.":"Accepted. Another bidder’s maximum remains higher.");
     },"Bid confirmed");
   }
-  const tabs=["Auctions","Selling","Orders","Notifications","Security",...(profile?.role==="admin"?["Administration"]:[])];
+  const activeType=profile?.active_account as AccountType|undefined;
+  const activeReady=onboarding.some(o=>o.account_type===activeType&&o.completed_at);
+  const tabs=[...(activeReady?(activeType==="seller"?["Selling"]:["Auctions","Watchlist","Favourites"]):[]),"Orders","Notifications","Settings","Security",...(profile?.role==="admin"?["Administration"]:[])];
+  const visibleTab=tabs.includes(tab)?tab:(activeReady?(activeType==="seller"?"Selling":"Auctions"):"Settings");
+  const catalogueView=catalogue.filter(l=>visibleTab==="Watchlist"?watched.includes(String(l.id)):visibleTab==="Favourites"?favourites.includes(String(l.id)):true);
+  async function switchAccount(type:AccountType) {
+    if(!onboarding.some(o=>o.account_type===type&&o.completed_at)){setOnboardingType(type);return;}
+    await run(async()=>{await rpc("ir_switch_account",{p_type:type});setTab(type==="seller"?"Selling":"Auctions");},`Switched to ${type} account`);
+  }
 
   return <main className="portal">
     <header className="portalHeader"><Link href="/" className="brand">IRKANTI</Link><span>YOUR MARKETPLACE ACCOUNT</span>{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setStaff({});setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
@@ -177,25 +202,32 @@ export default function Account() {
       {message&&<p className="portalMessage" role="status">{message}</p>}
       {!ready?<p>Loading your secure account…</p>:(!user||mode==="password")?<section className="portalPanel authPanel">
         <h2>{mode==="signup"?"Create your account":mode==="recovery"?"Recover your password":mode==="password"?"Set a new password":"Sign in"}</h2>
-        <form onSubmit={auth}>
+        {mode==="signup"&&<fieldset className="roleChoice"><legend>How would you like to start?</legend>{(["buyer","seller"] as const).map(t=><button type="button" key={t} aria-pressed={signupType===t} className={signupType===t?"goldButton":""} onClick={()=>setSignupType(t)}><strong>{t==="buyer"?"Buy & collect":"Sell your assets"}</strong><span>{t==="buyer"?"Explore auctions, save favourites and build your watchlist.":"Verify your seller profile and submit your inventory."}</span></button>)}</fieldset>}
+        {(mode!=="signup"||signupType)&&<form onSubmit={auth}>
           {mode==="signup"&&<label>Your name<input name="name" required maxLength={120} autoComplete="name"/></label>}
           {mode!=="password"&&<label>Email address<input name="email" type="email" required autoComplete="email"/></label>}
           {mode!=="recovery"&&<label>Password<input name="password" type="password" required minLength={12} autoComplete={mode==="signin"?"current-password":"new-password"}/><small>Use at least 12 characters and a unique password.</small></label>}
           <button className="goldButton" disabled={busy}>{busy?"Please wait…":mode==="signup"?"Register & verify email":mode==="recovery"?"Send recovery email":mode==="password"?"Save password":"Sign in"}</button>
-        </form>
+        </form>}
         <div className="portalLinks"><button onClick={()=>setMode(mode==="signup"?"signin":"signup")}>{mode==="signup"?"Already registered? Sign in":"Create an account"}</button><button onClick={()=>setMode("recovery")}>Forgot password?</button></div>
         <p className="muted">Email verification is required. Seller documents are private and reviewed before listing approval. Administrator access requires two-factor authentication.</p>
-      </section>:<>
-        <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={tab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>
+      </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Auctions");setOnboardingType(null);}}/>:<>
+        <p className="accountContext">{activeReady?`${activeType} account`:"Complete your account setup"}</p>
+        <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={visibleTab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>
+        {visibleTab==="Settings"&&<section className="portalGrid">{(["buyer","seller"] as const).map(t=><div className="portalPanel" key={t}><p className="eyebrow">{t.toUpperCase()} ACCOUNT</p><h2>{t==="buyer"?"Find your next acquisition":"Bring your assets to market"}</h2><p>{t==="buyer"?"Browse auctions, manage your watchlist and save favourites.":"Manage inventory and submit listings and feature requests for review."}</p><p>{onboarding.some(o=>o.account_type===t&&o.completed_at)?"Setup complete":onboarding.some(o=>o.account_type===t)?"Setup in progress":"Separate setup required"}{user.user_metadata?.onboarding_intent===t?" · Your signup choice":""}</p><button className="goldButton" disabled={busy||activeReady&&activeType===t} onClick={()=>void switchAccount(t)}>{activeReady&&activeType===t?"Current account":onboarding.some(o=>o.account_type===t&&o.completed_at)?`Switch to ${t}`:`Set up ${t} account`}</button></div>)}</section>}
         {profile?.suspended&&<p role="alert" className="portalMessage">Your account is suspended. Bidding, listing and uploading are disabled.</p>}
-        {tab==="Auctions"&&<section><div className="sectionHeading"><h2>Approved auctions</h2><button onClick={()=>void run(refresh,"Catalogue refreshed")}>Refresh</button></div>{!catalogue.length?<div className="portalPanel"><h3>The first collection is coming.</h3><p>No real listings have been approved yet. The homepage collection is illustrative, not available for purchase.</p><button onClick={()=>setTab("Selling")}>Apply to sell an asset →</button></div>:<div className="portalGrid">{catalogue.map(lot=><article className="portalPanel" key={String(lot.id)}>
+        {visibleTab==="Administration"&&profile?.role==="admin"&&aal==="aal2"&&<section className="portalPanel"><h2>Verify a buyer</h2><p>Review the private identity evidence before recording approval. Use the same pseudonymous identity fingerprint for this person across buyer and seller accounts.</p><form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_verify_buyer",{p_user:field(d,"user"),p_fingerprint:field(d,"fingerprint"),p_note:field(d,"note")});},"Buyer identity verified");}}><label>Buyer account ID<input name="user" required pattern="[0-9a-fA-F-]{36}"/></label><label>Verified identity fingerprint<input name="fingerprint" required minLength={8}/></label><label>Review note<textarea name="note" required minLength={5}/></label><button disabled={busy}>Record buyer verification</button></form></section>}
+        {visibleTab==="Selling"&&activeReady&&activeType==="seller"&&<section className="portalPanel"><h2>Feature your inventory</h2><p>Request editorial placement for an active submission. A request does not guarantee a feature or bypass listing approval.</p>{lots.filter(l=>["under_review","live"].includes(String(l.status))).map(l=><div className="record" key={String(l.id)}><strong>{l.title}</strong><button disabled={busy||Boolean(l.feature_requested)} onClick={()=>void run(async()=>{await rpc("ir_request_feature",{p_auction:l.id});},"Feature request sent to staff")}>{l.feature_requested?"Feature requested":"Request featured placement"}</button></div>)}</section>}
+        {visibleTab==="Settings"&&activeReady&&activeType==="buyer"&&<section className="portalPanel"><h2>Bidder verification</h2><p>Buyer setup unlocks browsing and saved lists. Staff must verify your identity before bidding. You can revisit verification to upload evidence.</p><button onClick={()=>setOnboardingType("buyer")}>Update buyer details & verification</button></section>}
+        {["Auctions","Watchlist","Favourites"].includes(visibleTab)&&activeReady&&activeType==="buyer"&&<section><div className="sectionHeading"><h2>{visibleTab==="Auctions"?"Approved auctions":visibleTab}</h2><button onClick={()=>void run(refresh,"Catalogue refreshed")}>Refresh</button></div>{!catalogueView.length?<div className="portalPanel"><h3>{visibleTab==="Auctions"?"The first collection is coming.":"Nothing saved here yet."}</h3><p>{visibleTab==="Auctions"?"No real listings have been approved yet. The homepage collection is illustrative, not available for purchase.":"Browse auctions and save the assets that interest you."}</p><button onClick={()=>setTab(visibleTab==="Auctions"?"Settings":"Auctions")}>{visibleTab==="Auctions"?"Manage account types":"Browse auctions"} →</button></div>:<div className="portalGrid">{catalogueView.map(lot=><article className="portalPanel" key={String(lot.id)}>
           {lot.image_path&&<img className="lotImage" src={`${supabaseUrl}/storage/v1/object/public/ir-auction-images/${lot.image_path}`} alt={String(lot.title)}/>}
           <p className="eyebrow">{lot.category} · {label(lot.status)}</p><h3>{lot.title}</h3><p>{lot.description}</p><p>{lot.location}</p><strong className="price">{currency(lot.current_bid)}</strong><p>{lot.bid_count} bids · {lot.has_reserve?(lot.reserve_met?"Reserve met":"Reserve not met"):"No reserve"}</p><p>Ends {new Date(String(lot.end_at)).toLocaleString("en-MT")}</p>
           {maxima.find(m=>m.auction_id===lot.id)&&<p>Your private maximum: {currency(maxima.find(m=>m.auction_id===lot.id)?.amount)}</p>}
           <button disabled={busy} onClick={()=>void run(async()=>{await rpc("ir_watch",{p_auction:lot.id,p_watch:!watched.includes(String(lot.id))});},"Watchlist updated")}>{watched.includes(String(lot.id))?"Remove from watchlist":"Watch this auction"}</button>
+          <button disabled={busy} onClick={()=>void run(async()=>{await rpc("ir_favourite",{p_auction:lot.id,p_saved:!favourites.includes(String(lot.id))});},"Favourites updated")}>{favourites.includes(String(lot.id))?"Remove favourite":"Add to favourites"}</button>
           {lot.status==="live"&&<form onSubmit={e=>bid(e,String(lot.id))}><label>Your maximum (€)<input name="amount" type="number" min={Number(lot.current_bid)} step="0.01" required/></label><button className="goldButton" disabled={busy||!connected||!trading||Boolean(profile?.suspended)}>Confirm maximum bid</button><small>Proxy bidding applies. Bids in the last two minutes extend the end time.</small></form>}
         </article>)}</div>}</section>}
-        {tab==="Selling"&&<section className="portalGrid"><div className="portalPanel"><h2>Seller verification</h2><p>Status: <b>{label(profile?.seller_status)}</b></p>{application?.review_note&&<p>Review: {application.review_note}</p>}
+        {visibleTab==="Selling"&&activeReady&&activeType==="seller"&&<section className="portalGrid"><div className="portalPanel"><h2>Seller verification</h2><p>Status: <b>{label(profile?.seller_status)}</b></p>{application?.review_note&&<p>Review: {application.review_note}</p>}
           <form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_submit_seller",{p_legal_name:field(d,"legal"),p_business_name:field(d,"business"),p_registration_number:field(d,"registration"),p_address:field(d,"address")});},"Application submitted. Upload your supporting documents below.");}}>
             <label>Full legal name<input name="legal" required minLength={2} maxLength={160} defaultValue={String(application?.legal_name||"")}/></label><label>Business name (if applicable)<input name="business" maxLength={160} defaultValue={String(application?.business_name||"")}/></label><label>Business registration number<input name="registration" maxLength={80} defaultValue={String(application?.registration_number||"")}/></label><label>Residential / registered address<textarea name="address" required minLength={8} maxLength={1000} defaultValue={String(application?.address||"")}/></label><button disabled={busy} className="goldButton">Submit for review</button>
           </form>

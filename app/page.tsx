@@ -63,6 +63,8 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [maxBid, setMaxBid] = useState("");
+  const [bidMessage, setBidMessage] = useState("");
+  const pendingBid = useRef<{ auction:string; amount:number; id:string } | null>(null);
   const [serviceError, setServiceError] = useState("");
   const [information, setInformation] = useState<"terms" | "privacy" | "cookies" | null>(null);
   const requestVersion = useRef(0);
@@ -125,11 +127,37 @@ export default function Home() {
 
   const submitBid = async (event:FormEvent) => {
     event.preventDefault(); if (!selected) return;
-    const result = await perform({ action:"bid", auctionId:selected.id, maxAmount:Number(maxBid) });
-    if (result?.bid) { setMaxBid(""); notify(result.bid.leading ? `You’re leading${result.bid.extended ? " — the auction was extended." : "."}` : "Bid registered. Another bidder’s maximum remains higher."); }
+    if (data.isPreview !== false) { setBidMessage("This is a sample listing. It cannot accept bids or create a purchase."); return; }
+    if (!signedIn) { setAuthOpen(true); return; }
+    if (mutationPending.current) return;
+    const amount = Number(maxBid);
+    if (!Number.isFinite(amount) || amount <= 0) { setBidMessage("Enter a valid maximum bid."); return; }
+    if (!pendingBid.current || pendingBid.current.auction !== selected.id || pendingBid.current.amount !== amount) {
+      pendingBid.current = { auction:selected.id, amount, id:crypto.randomUUID() };
+    }
+    mutationPending.current = true;
+    setBusy(true); setBidMessage("");
+    try {
+      const { data:result, error } = await browserClient().rpc("ir_submit_bid", {
+        p_auction:selected.id, p_max:amount, p_request:pendingBid.current.id,
+      });
+      if (error) throw new Error(error.message);
+      if (result?.error) throw new Error(String(result.error));
+      if (typeof result?.leading !== "boolean") throw new Error("Bid result could not be confirmed. Retry the same amount to check safely.");
+      pendingBid.current = null;
+      setBidMessage(result.leading ? "Bid accepted. You’re leading." : "Bid accepted. Another bidder’s maximum remains higher.");
+      // A failed catalogue refresh must not turn an accepted bid into a reported failure.
+      try {
+        const response = await fetch("/api/marketplace", {cache:"no-store"});
+        if (response.ok) setData(await response.json() as MarketplaceData);
+      } catch { /* Keep the confirmed result; the catalogue can refresh later. */ }
+    } catch (error) {
+      setBidMessage(error instanceof Error ? error.message : "Bid result could not be confirmed. Retry the same amount to check safely.");
+    } finally { mutationPending.current = false; setBusy(false); }
   };
 
   const openLot = (id:string) => {
+    setBidMessage("");
     const lot = data.auctions.find((item) => item.id === id);
     setSelectedId(id); if (lot) setMaxBid(String(lot.currentBid + bidStep(lot.currentBid)));
   };
@@ -226,7 +254,8 @@ export default function Home() {
             <p className="lotCategory">{selected.category.toUpperCase()}</p><h2>{selected.title}</h2><p className="location">⌖ {selected.location} · Offered by <b>{selected.sellerName}</b> ✓</p>
             <div className="panelStats"><div><small>CURRENT BID</small><strong>{euro.format(selected.currentBid)}</strong></div><div><small>TIME REMAINING</small><b><Countdown endAt={selected.endAt}/></b></div><div><small>BID ACTIVITY</small><b>{selected.bidCount} bids</b></div></div>
             <div className={`reserve ${!reserveIsMet ? "pending" : ""}`}><span>{!reserveIsMet ? "◇" : "✓"}</span><div><b>{!reserveExists ? "Offered without reserve" : reserveIsMet ? "Reserve met" : "Reserve not yet met"}</b><small>{!reserveExists || reserveIsMet ? "In a real auction, a winning bid would also be subject to the applicable sale terms." : "The seller’s confidential minimum has not yet been reached."}</small></div></div>
-            <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required/></label><button className="goldButton large" disabled={busy || signedIn === null}>{busy ? "Placing bid…" : signedIn === null ? "Checking account…" : signedIn ? "Open auction dashboard" : "Sign in to bid"}</button></form>
+            <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required disabled={busy}/></label><button className="goldButton large" disabled={busy || signedIn === null}>{busy ? "Placing bid…" : signedIn === null ? "Checking account…" : signedIn ? "Place bid" : "Sign in to bid"}</button></form>
+            {bidMessage && <p role="status" aria-live="polite">{bidMessage}</p>}
             <p className="proxyNote">We bid only as much as needed on your behalf. The next minimum is {euro.format(selected.currentBid + bidStep(selected.currentBid))}. Preview bids do not create a purchase obligation.</p>
             <div className="feePreview"><span><small>WINNING BID</small>{euro.format(selected.currentBid)}</span><b>+</b><span><small>BUYER FEE</small>{euro.format(selectedFee)}</span><b>=</b><span><small>ESTIMATED TOTAL</small>{euro.format(selected.currentBid + selectedFee)}</span></div>
             <div className="panelActions"><button onClick={() => toggleWatch(selected.id)}>{data.watched.includes(selected.id) ? "◆ Watching" : "◇ Add to watchlist"}</button><button onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/?lot=${encodeURIComponent(selected.id)}#auctions`); notify("Link copied."); } catch { notify("Copy the lot title to share this sample auction."); } }}>↗ Share lot</button><button onClick={() => notify("Viewings are not available for sample assets.")}>⌁ Arrange viewing</button></div>

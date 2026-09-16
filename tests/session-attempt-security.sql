@@ -4,6 +4,8 @@ insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values
  ('60000000-0000-4000-8000-000000000001','ir-session-test@example.invalid',now(),'{"name":"Session test"}');
 insert into auth.sessions(id,user_id,created_at,updated_at) values('60000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001',now(),now());
 select pg_temp.assert_true(not has_function_privilege('authenticated','public.ir_bid(uuid,numeric,uuid)','EXECUTE'),'legacy bid cannot bypass attempt limiter');
+insert into public.ir_account_onboarding(user_id,account_type,completed_at)
+select id,t,now() from public.ir_profiles cross join (values ('buyer'),('seller')) roles(t) where id::text like '60000000-%';
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"60000000-0000-4000-8000-000000000001","session_id":"60000000-0000-4000-8000-000000000002","aal":"aal1"}',true);
 select pg_temp.assert_true((select count(*)=1 from public.ir_profiles),'active session reads its own profile');

@@ -11,6 +11,8 @@ insert into ir_private.identity_links values('40000000-0000-4000-8000-0000000000
 insert into public.ir_auctions(id,seller_id,title,description,category,location,start_price,reserve_price,current_bid,end_at,status) values
  ('50000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001','Abuse prevention auction','A sufficiently long test description.','Collectables','Malta',100,0,100,now()+interval '1 hour','live');
 update ir_private.settings set trading_enabled=true;
+insert into public.ir_account_onboarding(user_id,account_type,completed_at)
+select id,t,now() from public.ir_profiles cross join (values ('buyer'),('seller')) roles(t) where id::text like '40000000-%';
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"40000000-0000-4000-8000-000000000001","session_id":"40000000-0000-4000-8000-000000000001","aal":"aal1"}',true);
 do $$ begin

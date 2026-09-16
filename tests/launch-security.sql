@@ -25,6 +25,8 @@ select pg_temp.assert_true(not has_function_privilege('authenticated','public.ir
 select pg_temp.assert_true(not has_table_privilege('authenticated','ir_private.settings','UPDATE'),'users cannot enable trading');
 select pg_temp.assert_true(not has_table_privilege('authenticated','public.ir_profiles','UPDATE'),'users cannot edit roles');
 select pg_temp.assert_true((select role='member' from public.ir_profiles where id='10000000-0000-4000-8000-000000000005'),'metadata cannot grant admin');
+insert into public.ir_account_onboarding(user_id,account_type,completed_at)
+select id,t,now() from public.ir_profiles cross join (values ('buyer'),('seller')) roles(t) where id::text like '10000000-%';
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000002","session_id":"10000000-0000-4000-8000-000000000002","aal":"aal1"}',true);
 select pg_temp.assert_true((select count(*)=1 from public.ir_profiles),'only own profile readable');
