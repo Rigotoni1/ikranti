@@ -3,6 +3,12 @@ import { spawn } from 'node:child_process';
 import { after, before, test } from 'node:test';
 
 let server;
+test('admin route sends anonymous visitors to account without staff content', async () => {
+  const response = await fetch(`${base}/admin`, { redirect: 'manual' });
+  assert.equal(response.status, 307);
+  assert.equal(new URL(response.headers.get('location'), base).pathname, '/account');
+  assert.doesNotMatch(await response.text(), /Staff decision|Verify a buyer|ir_risk_flags/);
+});
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:3198';
 before(async () => {
   if (process.env.TEST_BASE_URL) return;
