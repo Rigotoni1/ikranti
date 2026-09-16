@@ -20,6 +20,9 @@ test('home page renders the auction marketplace and its preview status', async (
   assert.equal(response.status,200);
   const html=await response.text();
   assert.match(html, /Remarkable assets/);
+  assert.match(html, /Irkanti — Malta/);
+  assert.match(html, /IRKANTI/);
+  assert.doesNotMatch(html, /Ikranti|IKRANTI/);
   assert.match(html, /Demonstration marketplace/);
   assert.match(html, /Sell an asset/);
 });

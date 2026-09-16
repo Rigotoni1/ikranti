@@ -8,16 +8,16 @@ const sans = Manrope({ variable: "--font-sans", subsets: ["latin"], weight: ["40
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("host") || "ikranti.lucaarrig.chatgpt.site";
+  const host = requestHeaders.get("host") || "irkanti.com";
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
-  const image = `${protocol}://${host}/og.png`;
-  const title = "Ikranti — Malta's Premier Auction Marketplace";
+  const image = `${protocol}://${host}/opengraph-image`;
+  const title = "Irkanti — Malta's Premier Auction Marketplace";
   const description = "Bid on exceptional property, vehicles, boats, watches, art and antiques in Malta.";
   return {
     title,
     description,
     icons: { icon: "/favicon.svg" },
-    openGraph: { title, description, type: "website", siteName: "Ikranti", images: [{ url:image, width:1730, height:909, alt:"Ikranti — remarkable assets, exceptional outcomes" }] },
+    openGraph: { title, description, type: "website", siteName: "Irkanti", images: [{ url:image, width:1200, height:630, alt:"Irkanti — remarkable assets, exceptional outcomes" }] },
     twitter: { card:"summary_large_image", title, description, images:[image] },
   };
 }

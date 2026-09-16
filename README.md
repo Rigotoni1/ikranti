@@ -1,4 +1,6 @@
-# Ikranti
+# Irkanti
+
+Brand: **Irkanti**. Intended custom domain: **irkanti.com** (DNS connection pending). Internal repository, project and database identifiers retain their original spelling for compatibility.
 
 - Public demonstration: https://ikranti-six.vercel.app
 - Source: https://github.com/Rigotoni1/ikranti
