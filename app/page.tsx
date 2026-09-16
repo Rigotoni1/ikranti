@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- auction media is uploaded or catalogued at runtime */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Auction = {
   id: string; sellerId: string; sellerName: string; title: string; category: string;
@@ -17,9 +17,9 @@ type BidEvent = { auction_id: string; visible_amount: number; created_at: string
 type MarketplaceData = { user: Profile | null; auctions: Auction[]; watched: string[]; myLots: Auction[]; recentBids: BidEvent[]; categories: string[] };
 
 const demoProfiles = [
-  { id: "buyer_01", name: "Lara Vella", initials: "LV", role: "buyer", detail: "Buyer · 6 watched lots" },
-  { id: "seller_01", name: "Marc Camilleri", initials: "MC", role: "seller", detail: "Seller · 4 active assets" },
-  { id: "collector_01", name: "Elena Borg", initials: "EB", role: "buyer", detail: "Collector · verified bidder" },
+  { id: "buyer_01", name: "Lara Vella", initials: "LV", role: "buyer", detail: "Buyer · demo account" },
+  { id: "seller_01", name: "Marc Camilleri", initials: "MC", role: "seller", detail: "Seller · demo account" },
+  { id: "collector_01", name: "Elena Borg", initials: "EB", role: "buyer", detail: "Collector · demo account" },
 ] as const;
 
 const fallbackLots: Auction[] = [
@@ -68,12 +68,17 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [maxBid, setMaxBid] = useState("");
   const [serviceError, setServiceError] = useState("");
+  const [information, setInformation] = useState<"terms" | "privacy" | "cookies" | null>(null);
+  const requestVersion = useRef(0);
+  const mutationPending = useRef(false);
 
   const load = async (userId = "buyer_01", activate = false) => {
+    const version = ++requestVersion.current;
     try {
       const response = await fetch(`/api/marketplace?user=${encodeURIComponent(userId)}`, { cache:"no-store" });
       if (!response.ok) throw new Error("Marketplace unavailable");
       const next = await response.json() as MarketplaceData;
+      if (version !== requestVersion.current) return false;
       setData(next);
       setServiceError("");
       if (activate) setProfile(next.user);
@@ -83,22 +88,30 @@ export default function Home() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem("ikranti-demo-profile");
+    const requestedLot = new URLSearchParams(window.location.search).get("lot");
+    const version = ++requestVersion.current;
     let active = true;
     fetch(`/api/marketplace?user=${encodeURIComponent(saved || "buyer_01")}`, { cache:"no-store" })
       .then((response) => response.ok ? response.json() as Promise<MarketplaceData> : Promise.reject(new Error("Marketplace unavailable")))
-      .then((next) => { if (active) { setData(next); setServiceError(""); if (saved) setProfile(next.user); } })
+      .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); if (saved) setProfile(next.user); if (requestedLot) setSelectedId(requestedLot); } })
       .catch(() => { if (active) setServiceError("The auction service is unavailable. Displaying the sample catalogue."); });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
+    let active = true;
+    let refreshing = false;
     const timer = window.setInterval(() => {
+      if (refreshing || mutationPending.current || document.visibilityState !== "visible") return;
+      refreshing = true;
+      const version = requestVersion.current;
       fetch(`/api/marketplace?user=${encodeURIComponent(profile?.id || "buyer_01")}`, { cache:"no-store" })
         .then((response) => response.ok ? response.json() as Promise<MarketplaceData> : Promise.reject(new Error("Refresh failed")))
-        .then((next) => setData(next))
-        .catch(() => undefined);
+        .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); } })
+        .catch(() => { if (active && version === requestVersion.current) setServiceError("Live updates are delayed. Refresh before placing a bid."); })
+        .finally(() => { refreshing = false; });
     }, 10000);
-    return () => window.clearInterval(timer);
+    return () => { active = false; window.clearInterval(timer); };
   }, [profile?.id]);
 
   const selected = data.auctions.find((lot) => lot.id === selectedId) || null;
@@ -122,6 +135,9 @@ export default function Home() {
 
   const perform = async (payload:Record<string, unknown>) => {
     if (!profile) { setAuthOpen(true); return null; }
+    if (mutationPending.current) return null;
+    mutationPending.current = true;
+    ++requestVersion.current;
     setBusy(true);
     try {
       const response = await fetch("/api/marketplace", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ ...payload, userId:profile.id }) });
@@ -129,7 +145,7 @@ export default function Home() {
       if (!response.ok) throw new Error(result.error || "Please try again.");
       setData(result); return result;
     } catch (error) { notify(error instanceof Error ? error.message : "Please try again."); return null; }
-    finally { setBusy(false); }
+    finally { mutationPending.current = false; setBusy(false); }
   };
 
   const toggleWatch = async (auctionId:string) => {
@@ -167,11 +183,11 @@ export default function Home() {
         <div className="shell heroInner">
           <p className="eyebrow"><span/> MALTA’S PREMIER AUCTION MARKETPLACE</p>
           <h1>Remarkable assets.<br/><em>Exceptional outcomes.</em></h1>
-          <p className="heroCopy">Discover and bid on Malta’s most distinctive property, vehicles, boats, watches, art and antiques—all verified, all transparent.</p>
+          <p className="heroCopy">A new home for Malta’s distinctive property, vehicles, boats, watches, art and antiques. Explore the auction experience with our sample collection.</p>
           <div className="heroActions"><a className="goldButton large" href="#auctions">Explore live auctions</a><button className="ghostButton large" onClick={openSell}>Sell with Ikranti <b>↗</b></button></div>
-          <div className="proof"><span>Identity verified</span><span>Secure bidding</span><span>Malta-based support</span></div>
+          <div className="proof"><span>Malta-focused</span><span>Automatic bidding</span><span>Demonstration edition</span></div>
         </div>
-        <div className="heroLot"><small>FEATURED PROPERTY</small><strong>Palazzo with Grand Harbour Views</strong><button onClick={() => openLot("senglea-palazzo")} aria-label="Open featured property">↗</button></div>
+        <div className="heroLot"><small>SAMPLE PROPERTY · ILLUSTRATIVE IMAGE</small><strong>Palazzo with Grand Harbour Views</strong><button onClick={() => openLot("senglea-palazzo")} aria-label="Open featured property">↗</button></div>
       </section>
 
       <section className="auctionSection shell" id="auctions">
@@ -217,20 +233,20 @@ export default function Home() {
       </section>
 
       <section className="trustSection shell" id="how">
-        <div className="trustIntro"><p className="eyebrow dark"><span/> TRUSTED FROM LISTING TO HANDOVER</p><h2>Serious assets deserve<br/><em>a better way to sell.</em></h2><p>Ikranti brings specialist oversight and transparent technology to every transaction. No anonymous bids. No endless messages. No uncertainty.</p></div>
+        <div className="trustIntro"><p className="eyebrow dark"><span/> THE MARKETPLACE VISION</p><h2>Serious assets deserve<br/><em>a better way to sell.</em></h2><p>Try the submission and bidding journey below. Identity verification, specialist review, payments and handover services must be established before real trading opens.</p></div>
         <div className="steps">
-          <article><span>01</span><i>⌁</i><h3>Submit your asset</h3><p>Tell us what you’re selling. Our specialists review its documentation, condition and market fit.</p></article>
-          <article><span>02</span><i>◈</i><h3>We prepare the auction</h3><p>A considered presentation, realistic reserve and verified details give bidders confidence.</p></article>
-          <article><span>03</span><i>↗</i><h3>The market decides</h3><p>Verified bidders compete openly, with automatic bids and fair anti-sniping extensions.</p></article>
-          <article><span>04</span><i>✓</i><h3>Complete securely</h3><p>We guide payment, documents and handover according to the asset category.</p></article>
+          <article><span>01</span><i>⌁</i><h3>Submit your asset</h3><p>Explore a sample submission with a description, photograph, starting bid and confidential reserve.</p></article>
+          <article><span>02</span><i>◈</i><h3>Prepare the auction</h3><p>Submissions enter a review queue. They do not automatically become public auctions.</p></article>
+          <article><span>03</span><i>↗</i><h3>The market decides</h3><p>Try automatic maximum bids and two-minute anti-sniping extensions with the preview accounts.</p></article>
+          <article><span>04</span><i>✓</i><h3>A future secure handover</h3><p>Category-specific payment, documents and ownership transfer are planned. No payment is taken in this preview.</p></article>
         </div>
       </section>
 
-      <section className="numbers"><div className="shell"><div><strong>€2.8m</strong><span>VALUE CURRENTLY LIVE</span></div><div><strong>100%</strong><span>VERIFIED SELLERS</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>SPECIALIST CATEGORIES</span></div></div></section>
+      <section className="numbers"><div className="shell"><div><strong>{data.auctions.length}</strong><span>SAMPLE AUCTIONS</span></div><div><strong>3</strong><span>PREVIEW ACCOUNTS</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>ASSET CATEGORIES</span></div></div></section>
 
-      <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Submit your asset for a complimentary review. No listing fee. Our specialists respond within one business day.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
+      <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Try the seller submission flow using sample details. Please do not upload personal documents or private information to a shared preview account.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
 
-      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IKRANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Demonstration of a Malta-focused auction marketplace.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Concierge</h4><a href="mailto:concierge@ikranti.com">concierge@ikranti.com</a><a href="tel:+35621240000">+356 2124 0000</a><span>Valletta, Malta</span></div></div><div className="shell footerBottom"><span>© 2026 Ikranti · Marketplace preview</span><div><button>Terms</button><button>Privacy</button><button>Cookies</button></div><span>EN · EUR</span></div></footer>
+      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IKRANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Demonstration of a Malta-focused auction marketplace.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Preview edition</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Ikranti · Marketplace preview</span><div><button onClick={() => setInformation("terms")}>Terms</button><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
 
       {selected && <div className="overlay" role="dialog" aria-modal="true" aria-label={selected.title}>
         <div className="lotPanel">
@@ -239,30 +255,31 @@ export default function Home() {
           <div className="panelContent">
             <p className="lotCategory">{selected.category.toUpperCase()}</p><h2>{selected.title}</h2><p className="location">⌖ {selected.location} · Offered by <b>{selected.sellerName}</b> ✓</p>
             <div className="panelStats"><div><small>CURRENT BID</small><strong>{euro.format(selected.currentBid)}</strong></div><div><small>TIME REMAINING</small><b><Countdown endAt={selected.endAt}/></b></div><div><small>BID ACTIVITY</small><b>{selected.bidCount} bids</b></div></div>
-            <div className={`reserve ${!reserveIsMet ? "pending" : ""}`}><span>{!reserveIsMet ? "◇" : "✓"}</span><div><b>{!reserveExists ? "Offered without reserve" : reserveIsMet ? "Reserve met" : "Reserve not yet met"}</b><small>{!reserveExists || reserveIsMet ? "This lot will sell to the highest bidder." : "The seller’s confidential minimum has not yet been reached."}</small></div></div>
+            <div className={`reserve ${!reserveIsMet ? "pending" : ""}`}><span>{!reserveIsMet ? "◇" : "✓"}</span><div><b>{!reserveExists ? "Offered without reserve" : reserveIsMet ? "Reserve met" : "Reserve not yet met"}</b><small>{!reserveExists || reserveIsMet ? "In a real auction, a winning bid would also be subject to the applicable sale terms." : "The seller’s confidential minimum has not yet been reached."}</small></div></div>
             <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required/></label><button className="goldButton large" disabled={busy}>{busy ? "Placing bid…" : profile ? "Place secure bid" : "Sign in to bid"}</button></form>
             <p className="proxyNote">We bid only as much as needed on your behalf. The next minimum is {euro.format(selected.currentBid + bidStep(selected.currentBid))}. Preview bids do not create a purchase obligation.</p>
             <div className="feePreview"><span><small>WINNING BID</small>{euro.format(selected.currentBid)}</span><b>+</b><span><small>BUYER FEE</small>{euro.format(selectedFee)}</span><b>=</b><span><small>ESTIMATED TOTAL</small>{euro.format(selected.currentBid + selectedFee)}</span></div>
-            <div className="panelActions"><button onClick={() => toggleWatch(selected.id)}>{data.watched.includes(selected.id) ? "◆ Watching" : "◇ Add to watchlist"}</button><button>↗ Share lot</button><button>⌁ Arrange viewing</button></div>
-            <div className="description"><h3>About this lot</h3><p>{selected.description}</p><div className="documentChips"><span>✓ Identity verified</span><span>✓ Ownership reviewed</span><span>▤ Condition report</span></div></div>
-            <div className="bidHistory"><h3>Recent activity</h3>{data.recentBids.filter((event) => event.auction_id === selected.id).slice(0,4).map((event,i) => <div key={`${event.created_at}-${i}`}><span><i>{event.initials}</i> Verified bidder</span><b>{euro.format(event.visible_amount)}</b></div>)}{!data.recentBids.some((event) => event.auction_id === selected.id) && <p>Bid history is available to signed-in participants.</p>}</div>
+            <div className="panelActions"><button onClick={() => toggleWatch(selected.id)}>{data.watched.includes(selected.id) ? "◆ Watching" : "◇ Add to watchlist"}</button><button onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/?lot=${encodeURIComponent(selected.id)}#auctions`); notify("Link copied."); } catch { notify("Copy the lot title to share this sample auction."); } }}>↗ Share lot</button><button onClick={() => notify("Viewings are not available for sample assets.")}>⌁ Arrange viewing</button></div>
+            <div className="description"><h3>About this lot</h3><p>{selected.description}</p><div className="documentChips"><span>◇ Fictional sample asset</span><span>◇ Illustrative photograph</span><span>▤ No real sale</span></div></div>
+            <div className="bidHistory"><h3>Recent activity</h3>{data.recentBids.filter((event) => event.auction_id === selected.id).slice(0,4).map((event,i) => <div key={`${event.created_at}-${i}`}><span><i>{event.initials}</i> Preview bidder</span><b>{euro.format(event.visible_amount)}</b></div>)}{!data.recentBids.some((event) => event.auction_id === selected.id) && <p>Bid history is available to signed-in participants.</p>}</div>
           </div>
         </div>
       </div>}
 
       {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><p className="eyebrow dark"><span/> PREVIEW ACCESS</p><h2>Choose an account</h2><p>Explore the complete buyer and seller experience using one of the populated demonstration profiles.</p><div className="profileChoices">{demoProfiles.map((item) => <button key={item.id} onClick={() => chooseProfile(item.id)} disabled={busy}><span>{item.initials}</span><div><b>{item.name}</b><small>{item.detail}</small></div><i>→</i></button>)}</div><small className="demoNote">These preview profiles contain fictional demonstration data. Production identity verification will replace them at launch.</small></div></div>}
 
-      {accountOpen && profile && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Your account"><div className="accountModal"><button className="close" onClick={() => setAccountOpen(false)} aria-label="Close">×</button><div className="accountHead"><span>{profile.initials}</span><div><p>{profile.role === "seller" ? "SELLER CONCIERGE" : "PRIVATE CLIENT"}</p><h2>Welcome, {profile.name.split(" ")[0]}.</h2><small>✓ Identity verified · {profile.email}</small></div></div>{profile.role === "seller" ? <SellerDashboard lots={data.myLots} onSell={() => {setAccountOpen(false);setSellOpen(true)}}/> : <BuyerDashboard lots={data.auctions.filter((lot) => data.watched.includes(lot.id) || lot.highestBidderId === profile.id)} userId={profile.id} openLot={(id) => {setAccountOpen(false);openLot(id)}}/>}<div className="accountFooter"><button onClick={() => {setAccountOpen(false);setAuthOpen(true)}}>Switch preview account</button><button onClick={signOut}>Sign out</button></div></div></div>}
+      {accountOpen && profile && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Your account"><div className="accountModal"><button className="close" onClick={() => setAccountOpen(false)} aria-label="Close">×</button><div className="accountHead"><span>{profile.initials}</span><div><p>{profile.role === "seller" ? "SELLER CONCIERGE" : "PRIVATE CLIENT"}</p><h2>Welcome, {profile.name.split(" ")[0]}.</h2><small>Shared demonstration profile · {profile.email}</small></div></div>{profile.role === "seller" ? <SellerDashboard lots={data.myLots} onSell={() => {setAccountOpen(false);setSellOpen(true)}}/> : <BuyerDashboard lots={data.auctions.filter((lot) => data.watched.includes(lot.id) || lot.highestBidderId === profile.id)} userId={profile.id} watchedCount={data.watched.length} openLot={(id) => {setAccountOpen(false);openLot(id)}}/>}<div className="accountFooter"><button onClick={() => {setAccountOpen(false);setAuthOpen(true)}}>Switch preview account</button><button onClick={signOut}>Sign out</button></div></div></div>}
 
       {sellOpen && profile && <ListingModal profile={profile} categories={data.categories} busy={busy} close={() => setSellOpen(false)} submit={async (payload) => {const result=await perform({action:"createListing",...payload});if(result){setSellOpen(false);notify(result.message || "Asset submitted.");if(profile.role === "seller") setAccountOpen(true);}}}/>} 
-      {toast && <div className="toast"><span>✓</span>{toast}</div>}
+      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> DEMONSTRATION EDITION</p><h2>{information === "terms" ? "About this preview" : information === "privacy" ? "Your preview data" : "Local preferences"}</h2><p>{information === "terms" ? "All catalogue assets and supplied identities are fictional. Bids are non-binding demonstrations. Fees are illustrative estimates. No payment, ownership transfer, authentication or identity verification service is provided. Launch terms must be completed before real trading." : information === "privacy" ? "The preview saves sample bids, watchlists, submissions and uploaded photographs in Supabase. Preview accounts are shared: other visitors can access their activity. Upload only sample content, never identity documents, private contact details or other sensitive information." : "The site stores your chosen preview profile in this browser’s local storage so it survives a reload. Sign out to remove that preference. No advertising cookies are required by this preview."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
+      {toast && <div className="toast" role="status"><span>◇</span>{toast}</div>}
     </main>
   );
 }
 
-function BuyerDashboard({ lots, userId, openLot }:{lots:Auction[];userId:string;openLot:(id:string)=>void}) {
+function BuyerDashboard({ lots, userId, watchedCount, openLot }:{lots:Auction[];userId:string;watchedCount:number;openLot:(id:string)=>void}) {
   const leading = lots.filter((lot) => lot.highestBidderId === userId);
-  return <div className="dashboard"><div className="dashboardStats"><div><small>WATCHING</small><strong>{lots.length}</strong></div><div><small>LEADING</small><strong>{leading.length}</strong></div><div><small>WON</small><strong>2</strong></div></div><div className="dashboardTitle"><h3>Your activity</h3><button>Notification settings</button></div><div className="dashboardLots">{lots.length ? lots.slice(0,4).map((lot) => <button key={lot.id} onClick={() => openLot(lot.id)}><img src={lot.image} alt=""/><div><small>{lot.category}</small><b>{lot.title}</b><span>{lot.highestBidderId === userId ? "● You’re leading" : `${lot.bidCount} bids`}</span></div><strong>{euro.format(lot.currentBid)}</strong></button>) : <div className="dashboardEmpty"><p>Your watchlist is ready for something exceptional.</p></div>}</div></div>;
+  return <div className="dashboard"><div className="dashboardStats"><div><small>WATCHING</small><strong>{watchedCount}</strong></div><div><small>LEADING</small><strong>{leading.length}</strong></div><div><small>TRACKED LOTS</small><strong>{lots.length}</strong></div></div><div className="dashboardTitle"><h3>Your activity</h3><span>Shared preview activity</span></div><div className="dashboardLots">{lots.length ? lots.slice(0,4).map((lot) => <button key={lot.id} onClick={() => openLot(lot.id)}><img src={lot.image} alt=""/><div><small>{lot.category}</small><b>{lot.title}</b><span>{lot.highestBidderId === userId ? "● You’re leading" : `${lot.bidCount} bids`}</span></div><strong>{euro.format(lot.currentBid)}</strong></button>) : <div className="dashboardEmpty"><p>Your watchlist is ready for something exceptional.</p></div>}</div></div>;
 }
 
 function SellerDashboard({ lots, onSell }:{lots:Auction[];onSell:()=>void}) {
@@ -288,5 +305,5 @@ function ListingModal({ profile, categories, busy, close, submit }:{profile:Prof
     } catch (error) { setUploadError(error instanceof Error ? error.message : "Image upload failed. Please retry."); }
     finally { setUploading(false); }
   };
-  return <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Submit an asset"><div className="listingModal"><button className="close" onClick={close} aria-label="Close">×</button><div className="listingSide"><Mark/><p>SELL WITH IKRANTI</p><h2>Put your asset<br/>before the right people.</h2><div className="formSteps"><span className={step===1?"active":"done"}><b>1</b> Asset details</span><span className={step===2?"active":""}><b>2</b> Value & reserve</span><span className={step===3?"active":""}><b>3</b> Review</span></div><small>Submitted by<br/><b>{profile.name} · Verified</b></small></div><form className="listingForm" onSubmit={(e)=>{e.preventDefault();submit({...fields,imageUrl,startPrice:Number(fields.startPrice),reservePrice:fields.reservePrice ? Number(fields.reservePrice) : 0})}}>{step===1&&<><p className="eyebrow dark"><span/> STEP ONE</p><h2>Tell us about your asset</h2><label>Category<select value={fields.category} onChange={(e)=>update("category",e.target.value)} required><option value="">Choose a category</option>{categories.map((item)=><option key={item}>{item}</option>)}</select></label><label>Asset title<input value={fields.title} onChange={(e)=>update("title",e.target.value)} placeholder="e.g. 1968 Porsche 911 S" required minLength={5}/></label><label>Location<input value={fields.location} onChange={(e)=>update("location",e.target.value)} placeholder="e.g. Sliema, Malta" required/></label><label>Description<textarea value={fields.description} onChange={(e)=>update("description",e.target.value)} placeholder="Condition, provenance, history and what makes it special…" required minLength={20}/></label><button type="button" className="goldButton large" onClick={()=>setStep(2)} disabled={!fields.category||fields.title.length<5||!fields.location||fields.description.length<20}>Continue</button></>}{step===2&&<><p className="eyebrow dark"><span/> STEP TWO</p><h2>Set the auction parameters</h2>{uploadError && <p role="alert">{uploadError}</p>}<div className="fieldPair"><label>Starting bid (€)<input type="number" min="1" value={fields.startPrice} onChange={(e)=>update("startPrice",e.target.value)} required/></label><label>Confidential reserve (€)<input type="number" min="0" value={fields.reservePrice} onChange={(e)=>update("reservePrice",e.target.value)} placeholder="0 = no reserve"/></label></div><label className="uploadBox">{imageUrl?<img src={imageUrl} alt="Asset preview"/>:<><span>＋</span><b>{uploading?"Uploading…":"Add a lead photograph"}</b><small>JPG, PNG or WebP · up to 4 MB</small></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e)=>upload(e.target.files?.[0])}/></label><div className="formActions"><button type="button" className="backButton" onClick={()=>setStep(1)}>← Back</button><button type="button" className="goldButton large" onClick={()=>setStep(3)} disabled={!fields.startPrice || uploading || Boolean(uploadError)}>Review submission</button></div></>}{step===3&&<><p className="eyebrow dark"><span/> FINAL REVIEW</p><h2>Your asset is ready</h2><div className="reviewCard">{imageUrl&&<img src={imageUrl} alt=""/>}<div><small>{fields.category}</small><h3>{fields.title}</h3><p>{fields.location}</p><strong>Starting at {euro.format(Number(fields.startPrice))}</strong></div></div><div className="reviewNote"><span>◇</span><p><b>Specialist review comes next.</b><br/>We’ll verify the asset, refine the presentation and agree the final reserve before it goes live.</p></div><div className="formActions"><button type="button" className="backButton" onClick={()=>setStep(2)}>← Back</button><button className="goldButton large" disabled={busy}>{busy?"Submitting…":"Submit for review"}</button></div></>}</form></div></div>;
+  return <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Submit an asset"><div className="listingModal"><button className="close" onClick={close} aria-label="Close">×</button><div className="listingSide"><Mark/><p>SELL WITH IKRANTI</p><h2>Put your asset<br/>before the right people.</h2><div className="formSteps"><span className={step===1?"active":"done"}><b>1</b> Asset details</span><span className={step===2?"active":""}><b>2</b> Value & reserve</span><span className={step===3?"active":""}><b>3</b> Review</span></div><small>Submitted by<br/><b>{profile.name} · Preview profile</b></small></div><form className="listingForm" onSubmit={(e)=>{e.preventDefault();submit({...fields,imageUrl,startPrice:Number(fields.startPrice),reservePrice:fields.reservePrice ? Number(fields.reservePrice) : 0})}}>{step===1&&<><p className="eyebrow dark"><span/> STEP ONE</p><h2>Tell us about your asset</h2><label>Category<select value={fields.category} onChange={(e)=>update("category",e.target.value)} required><option value="">Choose a category</option>{categories.map((item)=><option key={item}>{item}</option>)}</select></label><label>Asset title<input value={fields.title} onChange={(e)=>update("title",e.target.value)} placeholder="e.g. 1968 Porsche 911 S" required minLength={5}/></label><label>Location<input value={fields.location} onChange={(e)=>update("location",e.target.value)} placeholder="e.g. Sliema, Malta" required/></label><label>Description<textarea value={fields.description} onChange={(e)=>update("description",e.target.value)} placeholder="Condition, provenance, history and what makes it special…" required minLength={20}/></label><button type="button" className="goldButton large" onClick={()=>setStep(2)} disabled={!fields.category||fields.title.length<5||!fields.location||fields.description.length<20}>Continue</button></>}{step===2&&<><p className="eyebrow dark"><span/> STEP TWO</p><h2>Set the auction parameters</h2>{uploadError && <p role="alert">{uploadError}</p>}<div className="fieldPair"><label>Starting bid (€)<input type="number" min="1" value={fields.startPrice} onChange={(e)=>update("startPrice",e.target.value)} required/></label><label>Confidential reserve (€)<input type="number" min="0" value={fields.reservePrice} onChange={(e)=>update("reservePrice",e.target.value)} placeholder="0 = no reserve"/></label></div><label className="uploadBox">{imageUrl?<img src={imageUrl} alt="Asset preview"/>:<><span>＋</span><b>{uploading?"Uploading…":"Add a lead photograph"}</b><small>JPG, PNG or WebP · up to 4 MB</small></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e)=>upload(e.target.files?.[0])}/></label><div className="formActions"><button type="button" className="backButton" onClick={()=>setStep(1)}>← Back</button><button type="button" className="goldButton large" onClick={()=>setStep(3)} disabled={!fields.startPrice || uploading || Boolean(uploadError)}>Review submission</button></div></>}{step===3&&<><p className="eyebrow dark"><span/> FINAL REVIEW</p><h2>Your asset is ready</h2><div className="reviewCard">{imageUrl&&<img src={imageUrl} alt=""/>}<div><small>{fields.category}</small><h3>{fields.title}</h3><p>{fields.location}</p><strong>Starting at {euro.format(Number(fields.startPrice))}</strong></div></div><div className="reviewNote"><span>◇</span><p><b>Preview review queue.</b><br/>This sample submission will be saved for review. It will not open a real auction or create a sale.</p></div><div className="formActions"><button type="button" className="backButton" onClick={()=>setStep(2)}>← Back</button><button className="goldButton large" disabled={busy}>{busy?"Submitting…":"Submit for review"}</button></div></>}</form></div></div>;
 }

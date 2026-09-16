@@ -1,5 +1,8 @@
 # Ikranti
 
+- Public demonstration: https://ikranti-six.vercel.app
+- Source: https://github.com/Rigotoni1/ikranti
+
 Malta-first marketplace for curated live auctions of property, motor cars, boats, watches, jewellery, art, antiques and collectables.
 
 ## Product capabilities
@@ -25,6 +28,8 @@ Copy `.env.example` to `.env.local` and provide the project URL plus a random 32
 The Supabase project is `gjxpgqknuvryjzafbkrc` in Frankfurt. Apply the SQL in `supabase/migrations` and deploy `supabase/functions/ikranti-marketplace/index.ts`. The function uses custom gateway authentication, so its Supabase JWT gate is disabled. All marketplace tables have RLS enabled and no browser grants; only the server service role can read or modify them. Supabase's informational “RLS Enabled No Policy” advisory is intentional for these server-only tables.
 
 Run `pnpm test` for a production build and HTTP integration checks. `tests/bidding.sql` verifies proxy bidding, ties, minimums, anti-sniping, ownership, expiry and watchlists inside a transaction that is rolled back. GitHub pushes deploy the Next.js app through Vercel; Edge Function and schema updates are deployed separately.
+
+The API allows extra time for Supabase cold starts, logs timings without secrets or bid amounts, and never automatically retries mutations. When a mutation times out, check account activity before resubmitting: the database may already have committed it. `TEST_BASE_URL=https://ikranti-six.vercel.app node --test tests/deployment.test.mjs` runs the HTTP checks against the deployment.
 
 ## Release status
 

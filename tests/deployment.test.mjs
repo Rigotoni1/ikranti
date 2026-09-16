@@ -49,3 +49,11 @@ test('invalid bids and unknown users are rejected without changing auction state
   assert.equal((await request({action:'bid',userId:'seller_01',auctionId:'rolex-daytona',maxAmount:999999})).status,400);
   assert.equal((await request({action:'bid',userId:'unknown',auctionId:'rolex-daytona',maxAmount:999999})).status,403);
 });
+
+test('malformed payloads are rejected at the API boundary', async () => {
+  for (const body of ['null', '[]', '"invalid"', '{']) {
+    const response = await fetch(`${base}/api/marketplace`, {method:'POST',headers:{'content-type':'application/json'},body});
+    assert.equal(response.status,400);
+  }
+  assert.equal((await fetch(`${base}/api/media`,{method:'POST',body:'not multipart'})).status,400);
+});
