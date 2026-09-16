@@ -18,4 +18,14 @@ The included identities and lots are fictional demonstration data. Before accept
 
 ## Local development
 
-Use the package scripts for development, validation and builds. Structured marketplace data is stored in D1 and uploaded listing images in R2 through the logical bindings declared in `.openai/hosting.json`.
+Use the package scripts for development, validation and builds. The GitHub/Vercel version runs on native Next.js and proxies server-side marketplace requests to the `ikranti-marketplace` Supabase Edge Function. Structured auction state is stored in Supabase Postgres, while submitted listing images are stored in a public Supabase Storage bucket.
+
+Copy `.env.example` to `.env.local` and provide the project URL plus a random 32-byte gateway secret. Store only its SHA-256 digest in `ikranti_config` under `gateway_sha256`. The Edge Function verifies this digest; the secret stays in Vercel's encrypted environment variables. Never expose it with a `NEXT_PUBLIC_` prefix.
+
+The Supabase project is `gjxpgqknuvryjzafbkrc` in Frankfurt. Apply the SQL in `supabase/migrations` and deploy `supabase/functions/ikranti-marketplace/index.ts`. The function uses custom gateway authentication, so its Supabase JWT gate is disabled. All marketplace tables have RLS enabled and no browser grants; only the server service role can read or modify them. Supabase's informational “RLS Enabled No Policy” advisory is intentional for these server-only tables.
+
+Run `pnpm test` for a production build and HTTP integration checks. `tests/bidding.sql` verifies proxy bidding, ties, minimums, anti-sniping, ownership, expiry and watchlists inside a transaction that is rolled back. GitHub pushes deploy the Next.js app through Vercel; Edge Function and schema updates are deployed separately.
+
+## Release status
+
+This release is a working **demonstration**, with shared buyer and seller profiles and fictional inventory. It does not authenticate real customers, verify identities, take payments, transfer property, or create binding sales. Before inviting real bids, replace preview identities with individual authenticated accounts and complete payment, verification, moderation and legal workflows.
