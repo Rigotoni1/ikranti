@@ -9,7 +9,7 @@ select set_config('request.jwt.claims','{"sub":"70000000-0000-4000-8000-00000000
 do $$ begin
  begin perform public.ir_switch_account('seller'); raise exception 'FAIL: unfinished seller unlocked'; exception when raise_exception then if sqlerrm<>'Complete seller onboarding first' then raise; end if; end;
  begin perform public.ir_submit_bid(gen_random_uuid(),100,gen_random_uuid()); raise exception 'FAIL: unfinished buyer can bid'; exception when raise_exception then if sqlerrm<>'Complete buyer onboarding first' then raise; end if; end;
- begin perform public.ir_verify_buyer(auth.uid(),'test-identity','test review'); raise exception 'FAIL: self verification'; exception when raise_exception then if sqlerrm<>'Two-factor administrator required' then raise; end if; end;
+ begin perform public.ir_verify_buyer(auth.uid(),'test-identity','test review'); raise exception 'FAIL: self verification'; exception when raise_exception then if sqlerrm<>'Verified administrator required' then raise; end if; end;
 end $$;
 select public.ir_save_onboarding('buyer','{"legal_name":"Test Buyer","phone":"+356 12345678","country":"Malta","address":"123 Test Street, Malta","adult":"true","role":"admin","verified":true}',3,true);
 select pg_temp.assert_true((select active_account='buyer' from public.ir_profiles where id=auth.uid()),'buyer activated');

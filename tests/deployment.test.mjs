@@ -29,7 +29,8 @@ test('home page renders the auction marketplace and its preview status', async (
   assert.match(html, /Irkanti — Malta/);
   assert.match(html, /IRKANTI/);
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
-  assert.match(html, /Sample catalogue/);
+  assert.match(html, /Approved seller listings/);
+  assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
   assert.match(html, /Sell an asset/);
 });
 
@@ -40,7 +41,9 @@ test('catalogue is public and never accepts a browser-selected account', async (
   assert.equal(result.user,null);
   assert.deepEqual(result.myLots,[]);
   assert.deepEqual(result.watched,[]);
-  assert.ok(result.auctions.length>=8);
+  assert.equal(result.isPreview,false);
+  assert.ok(Array.isArray(result.auctions));
+  assert.ok(result.auctions.every(lot=>/^[0-9a-f-]{36}$/i.test(lot.id)));
   assert.ok(result.auctions.every(lot=>typeof lot.currentBid==='number' && typeof lot.reserveMet==='boolean'));
   assert.ok(result.auctions.every(lot=>!Object.hasOwn(lot,'reservePrice')));
 });

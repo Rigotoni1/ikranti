@@ -45,10 +45,8 @@ select pg_temp.assert_true((select count(*)=0 from public.ir_notifications),'oth
 select pg_temp.bid('20000000-0000-4000-8000-000000000001',200,'30000000-0000-4000-8000-000000000002');
 select pg_temp.assert_true((select current_bid=200 from public.ir_public_auctions where id='20000000-0000-4000-8000-000000000001'),'equal maximum retains earlier bidder and raises visible price');
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000004","session_id":"10000000-0000-4000-8000-000000000004","aal":"aal1"}',true);
-select pg_temp.assert_true((select count(*)=1 from public.ir_profiles),'admin AAL1 cannot read other profiles');
-do $$ begin
- begin perform public.ir_admin_action('suspend','10000000-0000-4000-8000-000000000003','Test suspension'); raise exception 'FAIL: admin action without MFA'; exception when raise_exception then if sqlerrm like 'FAIL:%' or sqlerrm<>'Administrator with two-factor authentication required' then raise; end if; end;
-end $$;
+select pg_temp.assert_true((select count(*)>=5 from public.ir_profiles),'verified admin AAL1 reads review queue');
+select pg_temp.assert_true(ir_private.admin(),'verified admin does not require MFA');
 select set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000004","session_id":"10000000-0000-4000-8000-000000000004","aal":"aal2"}',true);
 select pg_temp.assert_true((select count(*)>=5 from public.ir_profiles),'admin AAL2 reads review queue');
 select public.ir_admin_action('suspend','10000000-0000-4000-8000-000000000003','Test suspension');

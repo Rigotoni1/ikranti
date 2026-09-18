@@ -21,7 +21,7 @@ end $$;
 select set_config('request.jwt.claims','{"sub":"40000000-0000-4000-8000-000000000002","session_id":"40000000-0000-4000-8000-000000000002","aal":"aal1"}',true);
 do $$ begin
  begin perform pg_temp.bid('50000000-0000-4000-8000-000000000001',100,gen_random_uuid()); raise exception 'FAIL: linked bid'; exception when raise_exception then if sqlerrm like 'FAIL:%' or sqlerrm<>'Linked seller accounts cannot bid' then raise; end if; end;
- begin perform public.ir_claim_admin(); raise exception 'FAIL: claimed admin without MFA'; exception when raise_exception then if sqlerrm like 'FAIL:%' or sqlerrm<>'Two-factor authentication required' then raise; end if; end;
+ begin perform public.ir_claim_admin(); raise exception 'FAIL: claimed admin without invitation'; exception when raise_exception then if sqlerrm like 'FAIL:%' or sqlerrm<>'Administrator invitation required' then raise; end if; end;
  begin perform public.ir_register_document(null,'identity','40000000-0000-4000-8000-000000000001/stolen.pdf','application/pdf',100); raise exception 'FAIL: forged document'; exception when raise_exception then if sqlerrm like 'FAIL:%' or sqlerrm<>'Uploaded document not found' then raise; end if; end;
 end $$;
 select set_config('request.jwt.claims','{"sub":"40000000-0000-4000-8000-000000000002","session_id":"40000000-0000-4000-8000-000000000002","aal":"aal2"}',true);
