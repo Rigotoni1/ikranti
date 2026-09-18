@@ -96,6 +96,7 @@ export default function Account() {
     const safeRefresh = () => { void refresh().catch(e=>{setMessage(e.message);setReady(true);}); };
     const initial = window.setTimeout(()=>{
       if(new URLSearchParams(window.location.search).get("tab")==="security") setTab("Security");
+      if(new URLSearchParams(window.location.search).get("tab")==="orders") setTab("Orders");
       if(new URLSearchParams(window.location.search).get("recovery")==="1") setMode("password");
       if(new URLSearchParams(window.location.search).has("authError")) setMessage("This email link is invalid or expired. Request a new link.");
     },0);
@@ -202,6 +203,7 @@ export default function Account() {
         <p className="muted">Email verification is required. Seller documents are private and reviewed before listing approval. Administrator access requires two-factor authentication.</p>
       </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Auctions");setOnboardingType(null);}}/>:<>
         <p className="accountContext">{activeReady?`${activeType} account`:"Complete your account setup"}</p>
+        {activeReady&&activeType==="buyer"&&<p><Link href="/account/bids">My bids — track your auctions →</Link></p>}
         <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={visibleTab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>
         {visibleTab==="Settings"&&<section className="portalGrid">{(["buyer","seller"] as const).map(t=><div className="portalPanel" key={t}><p className="eyebrow">{t.toUpperCase()} ACCOUNT</p><h2>{t==="buyer"?"Find your next acquisition":"Bring your assets to market"}</h2><p>{t==="buyer"?"Browse auctions, manage your watchlist and save favourites.":"Manage inventory and submit listings and feature requests for review."}</p><p>{onboarding.some(o=>o.account_type===t&&o.completed_at)?"Setup complete":onboarding.some(o=>o.account_type===t)?"Setup in progress":"Separate setup required"}{user.user_metadata?.onboarding_intent===t?" · Your signup choice":""}</p><button className="goldButton" disabled={busy||activeReady&&activeType===t} onClick={()=>void switchAccount(t)}>{activeReady&&activeType===t?"Current account":onboarding.some(o=>o.account_type===t&&o.completed_at)?`Switch to ${t}`:`Set up ${t} account`}</button></div>)}</section>}
         {profile?.suspended&&<p role="alert" className="portalMessage">Your account is suspended. Bidding, listing and uploading are disabled.</p>}
