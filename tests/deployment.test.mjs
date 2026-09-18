@@ -29,7 +29,7 @@ test('home page renders the auction marketplace and its preview status', async (
   assert.match(html, /Irkanti — Malta/);
   assert.match(html, /IRKANTI/);
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
-  assert.match(html, /Approved seller listings/);
+  assert.doesNotMatch(html, /Approved seller listings/);
   assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
   assert.match(html, /Sell an asset/);
 });

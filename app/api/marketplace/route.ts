@@ -9,7 +9,7 @@ export async function GET() {
   const common={user:null,watched:[],myLots:[],recentBids:[],categories:["Property","Motor Cars","Boats","Watches & Jewellery","Art & Antiques","Collectables"]};
   return Response.json({...common,isPreview:false,auctions:(data||[]).map(l=>({
     id:l.id,sellerId:"",sellerName:"Verified Irkanti seller",title:l.title,description:l.description,category:l.category,location:l.location,
-    image:l.image_path?`${supabaseUrl}/storage/v1/object/public/ir-auction-images/${l.image_path}`:"/og.png",startPrice:Number(l.start_price),currentBid:Number(l.current_bid),
+    image:l.image_path?listingImageUrl(l.image_path):"/og.png",startPrice:Number(l.start_price),currentBid:Number(l.current_bid),
     hasReserve:l.has_reserve,reserveMet:l.reserve_met,highestBidderId:null,bidCount:l.bid_count,endAt:l.end_at,status:l.status,featured:false,views:0,watchCount:0,
   }))},{headers:{"Cache-Control":"no-store"}});
 
@@ -20,3 +20,4 @@ export async function POST() {
 }
 import { createClient } from "@supabase/supabase-js";
 import { supabaseKey, supabaseUrl } from "@/lib/supabase/config";
+import { listingImageUrl } from "@/lib/listing-image";

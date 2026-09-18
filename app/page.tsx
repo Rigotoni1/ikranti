@@ -161,7 +161,6 @@ export default function Home() {
 
       <section className="auctionSection shell" id="auctions">
         <div className="sectionHead"><div><p className="eyebrow dark"><span/> CURATED FOR DISCERNING BUYERS</p><h2>Live now</h2></div><p>{filtered.length} exceptional assets open for bidding</p></div>
-        <div className="previewNotice" role="note">Approved seller listings. <a href="/account">{signedIn ? "Manage your account or apply to sell →" : "Register your own account or apply to sell →"}</a></div>
         {serviceError && <p role="alert">{serviceError}</p>}
         <div className="marketToolbar">
           <div className="categoryTabs" role="tablist" aria-label="Auction categories">
