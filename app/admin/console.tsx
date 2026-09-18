@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import "./dashboard.css";
 import { browserClient } from "@/lib/supabase/browser";
 type Row = Record<string, unknown>;
 const client=browserClient();
@@ -13,6 +14,21 @@ export default function AdminConsole(){
  const [message,setMessage]=useState("");
  const [busy,setBusy]=useState(false);
  const [allowed,setAllowed]=useState(false);
+ const [section,setSection]=useState<"pending"|"listings"|"sellers">("pending");
+ const [selected,setSelected]=useState<string|null>(null);
+ const listings=staff.ir_auctions||[];
+ const pending=listings.filter(row=>row.status==="under_review");
+ const sellerIds=new Set([...(staff.ir_seller_applications||[]).map(r=>r.user_id),...(staff.ir_account_onboarding||[]).filter(r=>r.account_type==="seller").map(r=>r.user_id)]);
+ const sellers=(staff.ir_profiles||[]).filter(r=>sellerIds.has(r.id)||r.seller_status!=="not_started");
+ const sellerName=(id:unknown)=>String((staff.ir_profiles||[]).find(r=>r.id===id)?.name||"Seller");
+ const applicationName=(id:unknown)=>String((staff.ir_seller_applications||[]).find(r=>r.user_id===id)?.business_name||"Individual seller");
+ const rows=section==="sellers"?sellers:section==="pending"?pending:listings;
+ const current=rows.find(r=>r.id===selected);
+ const owner=current&&(section==="sellers"?current.id:current.seller_id);
+ const application=(staff.ir_seller_applications||[]).find(r=>r.user_id===owner);
+ const onboarding=(staff.ir_account_onboarding||[]).find(r=>r.user_id===owner&&r.account_type==="seller");
+ const evidence=(staff.ir_documents||[]).filter(r=>r.user_id===owner&&(section==="sellers"?!r.auction_id:r.auction_id===current?.id||!r.auction_id));
+ const choose=(next:typeof section)=>{setSection(next);setSelected(null);};
  const version=useRef(0);
  const mutation=useRef(false);
  const refresh=useCallback(async()=>{
@@ -50,11 +66,37 @@ export default function AdminConsole(){
  async function download(path:string){
   await run(async()=>{const {data,error}=await client.storage.from("ir-private-documents").createSignedUrl(path,60,{download:true});if(error)throw error;window.location.assign(data.signedUrl);},"Private download prepared");
  }
- return <main className="portal"><header className="portalHeader"><Link className="brand" href="/">IRKANTI</Link><span>ADMINISTRATION</span><Link href="/account">My account →</Link></header><div className="portalBody"><h1>Marketplace administration</h1><p>Staff tools · Latest 200 records per section</p><button disabled={busy} onClick={()=>void run(refresh,"Staff records refreshed")}>Refresh records</button>{message&&<p className="portalMessage" role="status">{message}</p>}{!allowed?<section className="portalPanel"><p>Checking your verified administrator account and active session.</p><Link href="/account?tab=security">Account security</Link></section>:<>
+ return <main className="portal"><header className="portalHeader"><Link className="brand" href="/">IRKANTI</Link><span>ADMINISTRATION</span><Link href="/account">My account →</Link></header><div className="portalBody"><h1>Admin dashboard</h1><p>Staff tools · Showing the latest 200 records per section</p><button disabled={busy} onClick={()=>void run(refresh,"Staff records refreshed")}>Refresh records</button>{message&&<p className="portalMessage" role="status">{message}</p>}{!allowed?<section className="portalPanel"><p>Checking your verified administrator account and active session.</p><Link href="/account?tab=security">Account security</Link></section>:<>
+
+<div className="adminStats" aria-label="Dashboard sections">
+{([["pending","Pending approval",pending.length],["listings","Submitted listings",listings.length],["sellers","Sellers",sellers.length]] as const).map(([key,title,count])=><button key={key} aria-pressed={section===key} onClick={()=>choose(key)}><span>{title}</span><strong>{count}</strong><span>{key==="sellers"?"View seller details":"Review submissions"} →</span></button>)}
+</div>
+<div className="adminWorkspace">
+<section className="portalPanel"><h2>{section==="sellers"?"Seller directory":section==="pending"?"Awaiting your review":"All submitted listings"}</h2>
+{!rows.length?<p className="muted">{section==="pending"?"You're up to date. No listings awaiting approval.":"No records yet."}</p>:<ul className="adminRecords">{rows.map(row=><li key={String(row.id)}><div><strong>{String(section==="sellers"?row.name:row.title)}</strong><span>{section==="sellers"?(applicationName(row.id)):String(row.category)+" · "+sellerName(row.seller_id)}</span><span className="adminBadge">{row.suspended?"Suspended":label(section==="sellers"?row.seller_status:row.status)}</span></div><button aria-pressed={selected===row.id} onClick={()=>setSelected(String(row.id))}>{section==="sellers"?"View seller":"Review listing"} →</button></li>)}</ul>}
+</section>
+<section className="portalPanel adminDetail" aria-label="Selected record details" aria-live="polite">
+{!current?<><h2>Select {section==="sellers"?"a seller":"a listing"}</h2><p>Open a record to see its details, supporting documents and review actions.</p></>:<>
+<h2>{String(section==="sellers"?current.name:current.title)}</h2><p className="adminBadge">{label(section==="sellers"?current.seller_status:current.status)}</p>
+{section!=="sellers"&&<><p>{String(current.description)}</p><dl>{["category","location","start_price","reserve_price","end_at","review_note"].map(key=><div key={key}><dt>{label(key)}</dt><dd>{String(current[key]??"—")}</dd></div>)}</dl><p>Submitted by {sellerName(owner)}</p></>}
+{section==="sellers"&&<><h3>Account & onboarding</h3><dl><div><dt>Account</dt><dd>{current.suspended?"Suspended":"Active"}</dd></div><div><dt>Onboarding</dt><dd>{onboarding?.completed_at?"Complete":"In progress"}</dd></div><div><dt>Joined</dt><dd>{String(current.created_at||"—").slice(0,10)}</dd></div></dl>
+{application&&<dl>{["legal_name","business_name","registration_number","address","review_note"].map(key=><div key={key}><dt>{label(key)}</dt><dd>{String(application[key]||"—")}</dd></div>)}</dl>}
+{onboarding?.details&&typeof onboarding.details==="object"?<dl>{Object.entries(onboarding.details as Row).map(([key,value])=><div key={key}><dt>{label(key)}</dt><dd>{String(value??"—")}</dd></div>)}</dl>:null}
+<p>{listings.filter(r=>r.seller_id===owner).length} listings in loaded records</p></>}
+<h3>Supporting documents</h3>{evidence.length?evidence.map(doc=><button key={String(doc.id)} disabled={busy} onClick={()=>void download(String(doc.path))}>{label(doc.kind)} ↓</button>):<p className="muted">No supporting documents submitted.</p>}
+<form key={String(current.id)+section} onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_admin_action",{p_action:field(data,"action"),p_target:String(current.id),p_note:field(data,"note"),p_fingerprint:field(data,"fingerprint")||null});},"Decision saved");}}>
+<label>Decision<select name="action">{(section==="sellers"?[...(application?["approve_seller","reject_seller"]:[]),current.suspended?"reinstate":"suspend"]:current.status==="under_review"?["approve_listing","reject_listing"]:[]).map(action=><option key={action} value={action}>{label(action)}</option>)}</select></label>
+{section==="sellers"&&application&&<label>Identity fingerprint (approval only)<input name="fingerprint"/><small>Use the verified pseudonymous fingerprint, never a raw document number.</small></label>}
+<label>Review note<textarea name="note" required minLength={5} maxLength={2000}/></label>
+<button className="goldButton" disabled={busy||(section!=="sellers"&&current.status!=="under_review")}>Save decision</button></form>
+</>}
+</section></div>
+<details className="adminAdvanced"><summary>Other administration tools & audit records</summary>
+
 <section className="portalPanel"><h2>Verify a buyer</h2><p>Review the private identity evidence before recording approval. Use the same pseudonymous identity fingerprint for this person across buyer and seller accounts.</p><form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_verify_buyer",{p_user:field(d,"user"),p_fingerprint:field(d,"fingerprint"),p_note:field(d,"note")});},"Buyer identity verified");}}><label>Buyer account ID<input name="user" required pattern="[0-9a-fA-F-]{36}"/></label><label>Verified identity fingerprint<input name="fingerprint" required minLength={8}/></label><label>Review note<textarea name="note" required minLength={5}/></label><button disabled={busy}>Record buyer verification</button></form></section>
           <div className="portalPanel"><h2>Staff decision</h2>{delivery&&<p>Email queue: {delivery.pending} pending · {delivery.sending} sending · {delivery.sent} sent · {delivery.failed} require review. Delivery requires Resend setup.</p>}<p>Review the records and private evidence below before deciding. Every action requires a note and is recorded in the audit trail.</p><form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_admin_action",{p_action:field(d,"action"),p_target:field(d,"target"),p_note:field(d,"note"),p_fingerprint:field(d,"fingerprint")||null});},"Staff decision recorded");}}>
             <label>Action<select name="action">{["approve_seller","reject_seller","approve_listing","reject_listing","suspend","reinstate","resolve_dispute","dismiss_dispute"].map(a=><option key={a} value={a}>{label(a)}</option>)}</select></label><label>Target account / listing / dispute ID<input name="target" required pattern="[0-9a-fA-F-]{36}"/></label><label>Decision note<textarea name="note" minLength={5} maxLength={2000} required/></label><label>Verified identity fingerprint (seller approval only)<input name="fingerprint" autoComplete="off"/><small>Use the same pseudonymous fingerprint for the same verified person/entity. Never enter a raw identity document number here.</small></label><button disabled={busy} className="goldButton">Record decision</button>
           </form></div><div className="portalGrid">{Object.entries(staff).map(([table,rows])=><div key={table} className="portalPanel"><h2>{label(table.replace("ir_",""))}</h2>{rows.length?rows.map((row,i)=><div className="record" key={String(row.id||row.user_id||i)}><dl>{Object.entries(row).filter(([k])=>!["path"].includes(k)).map(([k,v])=><div key={k}><dt>{label(k)}</dt><dd>{typeof v==="object"?JSON.stringify(v):String(v??"—")}</dd></div>)}</dl>{table==="ir_documents"&&<button onClick={()=>void download(String(row.path))}>Download private evidence</button>}</div>):<p>No records.</p>}</div>)}</div>
 
-</>}</div></main>;
+</details></>}</div></main>;
 }
