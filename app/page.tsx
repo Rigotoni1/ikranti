@@ -39,6 +39,7 @@ function Countdown({ endAt }: { endAt:string }) {
 function Mark() { return <span className="mark" aria-hidden="true">I</span>; }
 
 export default function Home() {
+  const [activeAccount,setActiveAccount] = useState<string|null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [data, setData] = useState<MarketplaceData>(emptyData);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,12 +57,25 @@ export default function Home() {
   const mutationPending = useRef(false);
 
   useEffect(() => {
-    // Presentation only: all private actions remain authorized by the account API.
-    // INITIAL_SESSION restores the same cookie-backed session used by /account.
-    const { data: { subscription } } = browserClient().auth.onAuthStateChange((_event, session) => {
-      setSignedIn(Boolean(session?.user));
-    });
-    return () => subscription.unsubscribe();
+    let generation=0, live=true;
+    const update=async()=>{
+      const version=++generation;
+      const {data:{user}}=await browserClient().auth.getUser();
+      if(!live||version!==generation)return;
+      setSignedIn(Boolean(user));
+      if(!user){setActiveAccount(null);setData(d=>({...d,watched:[]}));return;}
+      const [profile,saved]=await Promise.all([
+        browserClient().from("ir_profiles").select("active_account").eq("id",user.id).single(),
+        browserClient().from("ir_watchlist").select("auction_id").eq("user_id",user.id)
+      ]);
+      if(!live||version!==generation)return;
+      setActiveAccount(profile.data?.active_account||null);
+      if(!saved.error)setData(d=>({...d,watched:(saved.data||[]).map(r=>r.auction_id)}));
+    };
+    const {data:{subscription}}=browserClient().auth.onAuthStateChange(()=>{window.setTimeout(()=>void update(),0);});
+    const visible=()=>{if(document.visibilityState==="visible")void update();};
+    document.addEventListener("visibilitychange",visible);
+    return ()=>{live=false;++generation;subscription.unsubscribe();document.removeEventListener("visibilitychange",visible);};
   }, []);
 
   useEffect(() => {
@@ -71,7 +85,7 @@ export default function Home() {
     let active = true;
     fetch("/api/marketplace", { cache:"no-store" })
       .then((response) => response.ok ? response.json() as Promise<MarketplaceData> : Promise.reject(new Error("Marketplace unavailable")))
-      .then((next) => { if (active && version === requestVersion.current) { setData(next); setServiceError(""); if (requestedLot) setSelectedId(requestedLot); } })
+      .then((next) => { if (active && version === requestVersion.current) { setData(current=>({...next,watched:current.watched})); setServiceError(""); if (requestedLot) setSelectedId(requestedLot); } })
       .catch(() => { if (active) setServiceError("The auction service is unavailable. Please refresh to try again."); });
     return () => { active = false; };
   }, []);
@@ -89,8 +103,11 @@ export default function Home() {
 
   const toggleWatch = async (auctionId:string) => {
     if (!signedIn) { setAuthOpen(true); return; }
+    if(mutationPending.current)return;
+    mutationPending.current=true;
     const watched = data.watched.includes(auctionId);
     const {error}=await browserClient().rpc("ir_watch",{p_auction:auctionId,p_watch:!watched});
+    mutationPending.current=false;
     if(error){notify(error.message);return;}
     setData(current=>({...current,watched:watched?current.watched.filter(id=>id!==auctionId):[...current.watched,auctionId]}));
     notify(watched?"Removed from watchlist.":"Added to watchlist.");
@@ -120,7 +137,7 @@ export default function Home() {
       // A failed catalogue refresh must not turn an accepted bid into a reported failure.
       try {
         const response = await fetch("/api/marketplace", {cache:"no-store"});
-        if (response.ok) setData(await response.json() as MarketplaceData);
+        if (response.ok) { const next=await response.json() as MarketplaceData; setData(current=>({...next,watched:current.watched})); }
       } catch { /* Keep the confirmed result; the catalogue can refresh later. */ }
     } catch (error) {
       setBidMessage(error instanceof Error ? error.message : "Bid result could not be confirmed. Retry the same amount to check safely.");
@@ -142,7 +159,7 @@ export default function Home() {
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell</button><a href="#how">How it works</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
-          <a className="goldButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? "My account" : "Sign in"}</a>
+          <a className="goldButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? activeAccount==="seller"?"Seller account":activeAccount==="buyer"?"Buyer account":"My account" : "Sign in"}</a>
         </div>
       </header>
 

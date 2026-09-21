@@ -6,6 +6,7 @@ import Link from "next/link";
 import { browserClient } from "@/lib/supabase/browser";
 import { supabaseUrl } from "@/lib/supabase/config";
 import "./portal.css";
+import { UploadFile } from "./upload-file";
 import { Onboarding, AccountType, OnboardingRecord } from "./onboarding";
 
 type Row = Record<string, string | number | boolean | null>;
@@ -22,9 +23,9 @@ export default function Account() {
   const [signupType,setSignupType] = useState<AccountType|null>(null);
   const [onboardingType,setOnboardingType] = useState<AccountType|null>(null);
   const [onboarding,setOnboarding] = useState<OnboardingRecord[]>([]);
-  const [favourites,setFavourites] = useState<string[]>([]);
   const [tab,setTab] = useState("Watchlist");
   const [sellerForm,setSellerForm] = useState<"asset"|"verification"|"documents"|null>(null);
+  const [uploadVersion,setUploadVersion] = useState(0);
   const [message,setMessage] = useState("");
   const [busy,setBusy] = useState(false);
   const [connected,setConnected] = useState(false);
@@ -71,7 +72,6 @@ export default function Account() {
       client.auth.mfa.listFactors(),
       client.rpc("ir_admin_invitation_status"),
       client.from("ir_account_onboarding").select("*").eq("user_id",current.id),
-      client.from("ir_favourites").select("auction_id").eq("user_id",current.id),
     ]);
     if (version!==loading.current) return;
     const error = results.find(r=>r.error)?.error;
@@ -82,7 +82,6 @@ export default function Account() {
     setAal(results[8].data?.currentLevel||"aal1");
     setAdminInvite(Boolean(results[10].data));
     setOnboarding((results[11].data||[]) as OnboardingRecord[]);
-    setFavourites((results[12].data||[]).map(r=>String(r.auction_id)));
     if(initialOnboardingUser.current!==current.id){
       initialOnboardingUser.current=current.id;
       const intent=current.user_metadata?.onboarding_intent;
@@ -98,13 +97,14 @@ export default function Account() {
     const initial = window.setTimeout(()=>{
       if(new URLSearchParams(window.location.search).get("tab")==="security") setTab("Security");
       if(new URLSearchParams(window.location.search).get("tab")==="orders") setTab("Orders");
+      if(new URLSearchParams(window.location.search).get("tab")==="settings") setTab("Settings");
       if(new URLSearchParams(window.location.search).get("recovery")==="1") setMode("password");
       if(new URLSearchParams(window.location.search).has("authError")) setMessage("This email link is invalid or expired. Request a new link.");
     },0);
     safeRefresh();
     const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
       if (event==="PASSWORD_RECOVERY") setMode("password");
-      if (event==="SIGNED_OUT") { setFactor(""); setQr(""); setOnboardingType(null);setOnboarding([]);setFavourites([]);initialOnboardingUser.current=null; }
+      if (event==="SIGNED_OUT") { setFactor(""); setQr(""); setOnboardingType(null);setOnboarding([]);initialOnboardingUser.current=null; }
       // Avoid invoking auth methods inside Supabase's synchronous auth callback.
       window.setTimeout(safeRefresh,0);
     });
@@ -148,6 +148,12 @@ export default function Account() {
       if(mode==="password") setMode("signin");
     },mode==="signup" ? "Check your email to verify your account. Delivery depends on email setup." : mode==="recovery" ? "If the address is registered, a recovery email will be sent." : "Account updated");
   }
+  function validateListing(data:FormData) {
+    const end=new Date(field(data,"end")).getTime();
+    if(!Number.isFinite(end)||end<Date.now()+86400000||end>Date.now()+90*86400000) throw new Error("Choose a closing time between 1 and 90 days from now. Your form has not been cleared.");
+    const start=Number(data.get("start")), reserve=Number(data.get("reserve"));
+    if(!Number.isFinite(start)||!Number.isFinite(reserve)||start<=0||reserve<0) throw new Error("Enter a positive starting price and a reserve of zero or more.");
+  }
   async function upload(event:FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data=new FormData(event.currentTarget);
     void run(async()=>{
@@ -157,6 +163,7 @@ export default function Account() {
       // The worker independently validates the JWT, account, bytes and quota.
       const response=await fetch(`${supabaseUrl}/functions/v1/ir-launch-worker`,{method:"POST",headers:{Authorization:`Bearer ${session.access_token}`},body:data});
       const result=await response.json() as {error?:string}; if(!response.ok) throw new Error(result.error||"Upload failed");
+      setUploadVersion(v=>v+1);
     },"Document uploaded securely");
   }
   async function download(path:string) {
@@ -177,23 +184,23 @@ export default function Account() {
   }
   const activeType=profile?.active_account as AccountType|undefined;
   const activeReady=onboarding.some(o=>o.account_type===activeType&&o.completed_at);
-  const tabs=[...(activeReady?(activeType==="seller"?["Selling"]:["Watchlist","Favourites"]):[]),"Orders","Notifications","Settings","Security"];
+  const tabs=[...(activeReady?(activeType==="seller"?["Selling"]:["Watchlist"]):[]),"Orders","Notifications","Settings","Security"];
   const visibleTab=tabs.includes(tab)?tab:(activeReady?(activeType==="seller"?"Selling":"Watchlist"):"Settings");
-  const catalogueView=catalogue.filter(l=>visibleTab==="Watchlist"?watched.includes(String(l.id)):visibleTab==="Favourites"?favourites.includes(String(l.id)):true);
+  const catalogueView=catalogue.filter(l=>watched.includes(String(l.id)));
   async function switchAccount(type:AccountType) {
     if(!onboarding.some(o=>o.account_type===type&&o.completed_at)){setOnboardingType(type);return;}
     await run(async()=>{await rpc("ir_switch_account",{p_type:type});setTab(type==="seller"?"Selling":"Watchlist");},`Switched to ${type} account`);
   }
 
   return <main className="portal">
-    <header className="portalHeader"><Link href="/" className="brand">IRKANTI</Link><span>YOUR MARKETPLACE ACCOUNT</span>{profile?.role==="admin"&&<Link href="/admin">Administration →</Link>}{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
+    <header className="portalHeader"><Link href="/" className="brand">IRKANTI</Link><Link className="activeAccount" href="/account?tab=settings" onClick={()=>setTab("Settings")}>{user?(activeReady?`${activeType === "seller" ? "Seller" : "Buyer"} account · Switch`:"Account setup"):"Your account"}</Link>{profile?.role==="admin"&&<Link href="/admin">Administration →</Link>}{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
     <div className="portalNotice">{trading?"Live marketplace":"Bidding is currently paused"} · <span className={connected?"online":"offline"}>{connected?"Live updates connected":"Reconnecting live updates…"}</span></div>
     <div className="portalBody">
       <p className="eyebrow">MALTA · EXCEPTIONAL ASSETS</p><h1>{user?`Welcome, ${profile?.name||"member"}`:"Your next chapter starts here."}</h1>
       {message&&<p className="portalMessage" role="status">{message}</p>}
       {!ready?<p>Loading your secure account…</p>:(!user||mode==="password")?<section className="portalPanel authPanel">
         <h2>{mode==="signup"?"Create your account":mode==="recovery"?"Recover your password":mode==="password"?"Set a new password":"Sign in"}</h2>
-        {mode==="signup"&&<fieldset className="roleChoice"><legend>How would you like to start?</legend>{(["buyer","seller"] as const).map(t=><button type="button" key={t} aria-pressed={signupType===t} className={signupType===t?"goldButton":""} onClick={()=>setSignupType(t)}><strong>{t==="buyer"?"Buy & collect":"Sell your assets"}</strong><span>{t==="buyer"?"Explore auctions, save favourites and build your watchlist.":"Verify your seller profile and submit your inventory."}</span></button>)}</fieldset>}
+        {mode==="signup"&&<fieldset className="roleChoice"><legend>How would you like to start?</legend>{(["buyer","seller"] as const).map(t=><button type="button" key={t} aria-pressed={signupType===t} className={signupType===t?"goldButton":""} onClick={()=>setSignupType(t)}><strong>{t==="buyer"?"Buy & collect":"Sell your assets"}</strong><span>{t==="buyer"?"Explore auctions and build your watchlist.":"Verify your seller profile and submit your inventory."}</span></button>)}</fieldset>}
         {(mode!=="signup"||signupType)&&<form onSubmit={auth}>
           {mode==="signup"&&<label>Your name<input name="name" required maxLength={120} autoComplete="name"/></label>}
           {mode!=="password"&&<label>Email address<input name="email" type="email" required autoComplete="email"/></label>}
@@ -206,23 +213,23 @@ export default function Account() {
         <p className="accountContext">{activeReady?`${activeType} account`:"Complete your account setup"}</p>
         {activeReady&&activeType==="buyer"&&<p><Link href="/account/bids">My bids — track your auctions →</Link></p>}
         <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={visibleTab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>
-        {visibleTab==="Settings"&&<section className="portalGrid">{(["buyer","seller"] as const).map(t=><div className="portalPanel" key={t}><p className="eyebrow">{t.toUpperCase()} ACCOUNT</p><h2>{t==="buyer"?"Find your next acquisition":"Bring your assets to market"}</h2><p>{t==="buyer"?"Browse auctions, manage your watchlist and save favourites.":"Manage inventory and submit listings and feature requests for review."}</p><p>{onboarding.some(o=>o.account_type===t&&o.completed_at)?"Setup complete":onboarding.some(o=>o.account_type===t)?"Setup in progress":"Separate setup required"}{user.user_metadata?.onboarding_intent===t?" · Your signup choice":""}</p><button className="goldButton" disabled={busy||activeReady&&activeType===t} onClick={()=>void switchAccount(t)}>{activeReady&&activeType===t?"Current account":onboarding.some(o=>o.account_type===t&&o.completed_at)?`Switch to ${t}`:`Set up ${t} account`}</button></div>)}</section>}
+        {visibleTab==="Settings"&&<section className="portalGrid">{(["buyer","seller"] as const).map(t=><div className="portalPanel" key={t}><p className="eyebrow">{t.toUpperCase()} ACCOUNT</p><h2>{t==="buyer"?"Find your next acquisition":"Bring your assets to market"}</h2><p>{t==="buyer"?"Browse auctions and manage your watchlist.":"Manage inventory and submit listings and feature requests for review."}</p><p>{onboarding.some(o=>o.account_type===t&&o.completed_at)?"Setup complete":onboarding.some(o=>o.account_type===t)?"Setup in progress":"Separate setup required"}{user.user_metadata?.onboarding_intent===t?" · Your signup choice":""}</p><button className="goldButton" disabled={busy||activeReady&&activeType===t} onClick={()=>void switchAccount(t)}>{activeReady&&activeType===t?"Current account":onboarding.some(o=>o.account_type===t&&o.completed_at)?`Switch to ${t}`:`Set up ${t} account`}</button></div>)}</section>}
         {profile?.suspended&&<p role="alert" className="portalMessage">Your account is suspended. Bidding, listing and uploading are disabled.</p>}
         {visibleTab==="Selling"&&activeReady&&activeType==="seller"&&<section className="sellerTools" aria-label="Seller tools"><div className="sellerActions">{([["asset","Submit an asset","Create a new auction listing"],["verification","Seller verification",`Status: ${label(profile?.seller_status)}`],["documents","Documents & photos","Manage private evidence and listing images"]] as const).map(([key,title,description])=><button key={key} type="button" disabled={busy} aria-expanded={sellerForm===key} aria-controls={`seller-form-${key}`} onClick={()=>setSellerForm(sellerForm===key?null:key)}><strong>{title}</strong><span>{description}</span><span>{sellerForm===key?"Close form −":"Open form +"}</span></button>)}</div><div id="seller-form-verification" hidden={sellerForm!=="verification"} className="portalPanel"><button type="button" disabled={busy} onClick={()=>setSellerForm(null)}>Close form</button><h2>Seller verification</h2><p>Status: <b>{label(profile?.seller_status)}</b></p>{application?.review_note&&<p>Review: {application.review_note}</p>}
           <form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_submit_seller",{p_legal_name:field(d,"legal"),p_business_name:field(d,"business"),p_registration_number:field(d,"registration"),p_address:field(d,"address")});},"Application submitted. Upload your supporting documents below.");}}>
             <label>Full legal name<input name="legal" required minLength={2} maxLength={160} defaultValue={String(application?.legal_name||"")}/></label><label>Business name (if applicable)<input name="business" maxLength={160} defaultValue={String(application?.business_name||"")}/></label><label>Business registration number<input name="registration" maxLength={80} defaultValue={String(application?.registration_number||"")}/></label><label>Residential / registered address<textarea name="address" required minLength={8} maxLength={1000} defaultValue={String(application?.address||"")}/></label><button disabled={busy} className="goldButton">Submit for review</button>
           </form>
         </div><div id="seller-form-documents" hidden={sellerForm!=="documents"} className="portalPanel"><button type="button" disabled={busy} onClick={()=>setSellerForm(null)}>Close form</button><h2>Private documents & photos</h2><p>Identity and business documents belong to your account. Ownership evidence and category documents belong to a listing. Listing photos are public; never upload identity documents as listing photos.</p>
-          <form onSubmit={upload}><label>Document type<select name="kind"><option value="identity">Identity document — private</option><option value="business">Business document — private</option><option value="ownership">Ownership evidence — private</option><option value="property_title">Property title / legal pack — private</option><option value="vehicle_registration">Vehicle registration — private</option><option value="boat_registration">Boat registration — private</option><option value="provenance">Authenticity / provenance — private</option><option value="condition">Condition report — private</option><option value="listing_image">Listing photograph — PUBLIC</option></select></label><label>Related listing<select name="auctionId"><option value="">Account identity / business</option>{lots.filter(l=>l.status==="under_review").map(l=><option value={String(l.id)} key={String(l.id)}>{l.title}</option>)}</select></label><label>File<input type="file" name="file" accept="image/jpeg,image/png,image/webp,application/pdf" required/></label><small>Documents: PDF/JPEG/PNG, up to 8 MB. Public photos: JPEG/PNG/WebP, up to 4 MB. Up to 30 upload attempts/day.</small><button className="goldButton" disabled={busy}>Upload securely</button></form>
+          <form onSubmit={upload}><label>Document type<select name="kind"><option value="identity">Identity document — private</option><option value="business">Business document — private</option><option value="ownership">Ownership evidence — private</option><option value="property_title">Property title / legal pack — private</option><option value="vehicle_registration">Vehicle registration — private</option><option value="boat_registration">Boat registration — private</option><option value="provenance">Authenticity / provenance — private</option><option value="condition">Condition report — private</option><option value="listing_image">Listing photograph — PUBLIC</option></select></label><label>Related listing<select name="auctionId"><option value="">Account identity / business</option>{lots.filter(l=>l.status==="under_review").map(l=><option value={String(l.id)} key={String(l.id)}>{l.title}</option>)}</select></label><UploadFile key={uploadVersion}/><small>Documents: PDF/JPEG/PNG, up to 8 MB. Public photos: JPEG/PNG/WebP, up to 4 MB. Up to 30 upload attempts/day.</small><button className="goldButton" disabled={busy}>Upload securely</button></form>
           <ul className="recordList">{documents.map(d=><li key={String(d.id)}><span>{label(d.kind)} · {Math.ceil(Number(d.size)/1024)} KB</span><button onClick={()=>void download(String(d.path))}>Download</button></li>)}</ul>
-        </div><div id="seller-form-asset" hidden={sellerForm!=="asset"} className="portalPanel"><button type="button" disabled={busy} onClick={()=>setSellerForm(null)}>Close form</button><h2>Submit an asset</h2><p>Submit your asset for staff review. An approved seller account and a listing photograph are required before it can go live.</p><form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{await rpc("ir_create_listing",{p_title:field(d,"title"),p_description:field(d,"description"),p_category:field(d,"category"),p_location:field(d,"location"),p_start:Number(d.get("start")),p_reserve:Number(d.get("reserve")),p_end:new Date(field(d,"end")).toISOString()});},"Listing submitted. Open Documents & photos to add a listing photograph.");}}>
-          <label>Title<input name="title" required minLength={5} maxLength={160}/></label><label>Category<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Location<input name="location" required minLength={2} maxLength={160}/></label><label>Description & condition<textarea name="description" required minLength={20} maxLength={10000}/></label><div className="formPair"><label>Starting price (€)<input name="start" type="number" min="1" step="0.01" required/></label><label>Reserve (€; 0 for none)<input name="reserve" type="number" min="0" step="0.01" defaultValue="0" required/></label></div><label>Proposed closing time (your local time)<input name="end" type="datetime-local" required/></label><button disabled={busy||profile?.seller_status!=="approved"} className="goldButton">Submit for approval</button>
+        </div><div id="seller-form-asset" hidden={sellerForm!=="asset"} className="portalPanel"><button type="button" disabled={busy} onClick={()=>setSellerForm(null)}>Close form</button><h2>Submit an asset</h2><p className="muted">Not saved yet. Form values stay only while this form is open. Submit to save your listing for review.</p><p>Submit your asset for staff review. An approved seller account and a listing photograph are required before it can go live.</p><form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{validateListing(d);await rpc("ir_create_listing",{p_title:field(d,"title"),p_description:field(d,"description"),p_category:field(d,"category"),p_location:field(d,"location"),p_start:Number(d.get("start")),p_reserve:Number(d.get("reserve")),p_end:new Date(field(d,"end")).toISOString()});},"Listing submitted. Open Documents & photos to add a listing photograph.");}}>
+          <label>Title<input name="title" required minLength={5} maxLength={160}/></label><label>Category<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Location<input name="location" required minLength={2} maxLength={160}/></label><label>Description & condition<textarea name="description" required minLength={20} maxLength={10000}/></label><div className="formPair"><label>Starting price (€)<input name="start" type="number" min="0.01" step="0.01" required/></label><label>Reserve (€; 0 for none)<input name="reserve" type="number" min="0" step="0.01" defaultValue="0" required/></label></div><label>Proposed closing time (your local time)<input name="end" type="datetime-local" required/></label><button disabled={busy||profile?.seller_status!=="approved"} className="goldButton">Submit for approval</button>
         </form></div></section>}
-        {visibleTab==="Selling"&&activeReady&&activeType==="seller"&&<section className="portalPanel"><h2>Your listings</h2><p>Manage your submissions. Changes return a listing to staff review. Auctions with bids cannot be edited.</p>{lots.length?lots.map(l=><article className="record" key={String(l.id)}>
-{l.image_path&&<img className="lotImage" src={listingImageUrl(l.image_path)} alt={String(l.title)}/>}
-<h3>{l.title}</h3><p>{label(l.status)} · {currency(l.current_bid)} · {Number(l.bid_count)} bids</p>{l.review_note&&<p>Review: {l.review_note}</p>}
-{["under_review","rejected","live"].includes(String(l.status))&&Number(l.bid_count)===0?<details><summary>Edit listing</summary>
-<form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);const panel=e.currentTarget.closest("details");void run(async()=>{await rpc("ir_edit_listing",{p_auction:l.id,p_title:field(d,"title"),p_description:field(d,"description"),p_category:field(d,"category"),p_location:field(d,"location"),p_start:Number(d.get("start")),p_reserve:Number(d.get("reserve")),p_end:new Date(field(d,"end")).toISOString()});if(panel)panel.open=false;},"Listing updated and sent for review");}}>
+        {visibleTab==="Selling"&&activeReady&&activeType==="seller"&&<section className="portalPanel"><h2>Your listings</h2><p>Manage your submissions. Changes return a listing to staff review. Auctions with bids cannot be edited.</p>{lots.length?lots.map(l=><article className="record sellerListing" key={String(l.id)}>
+{l.image_path?<img className="lotImage" src={listingImageUrl(l.image_path)} alt={String(l.title)}/>:<span className="muted">No photo</span>}
+<div className="listingSummary"><h3>{l.title}</h3><p>{label(l.status)} · {currency(l.current_bid)} · {Number(l.bid_count)} bids</p><small>Ends {new Date(String(l.end_at)).toLocaleString("en-MT")}</small>{l.review_note&&<p>Review: {l.review_note}</p>}</div>
+{["under_review","changes_requested","rejected","live"].includes(String(l.status))&&Number(l.bid_count)===0?<details><summary>Edit listing</summary><p className="muted">Unsaved edits stay while this form is open, including after an error. Save to keep them in your account.</p>
+<form onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);const panel=e.currentTarget.closest("details");void run(async()=>{validateListing(d);await rpc("ir_edit_listing",{p_auction:l.id,p_title:field(d,"title"),p_description:field(d,"description"),p_category:field(d,"category"),p_location:field(d,"location"),p_start:Number(d.get("start")),p_reserve:Number(d.get("reserve")),p_end:new Date(field(d,"end")).toISOString()});if(panel)panel.open=false;},"Listing updated and sent for review");}}>
 <label>Title<input name="title" required minLength={5} maxLength={160} defaultValue={String(l.title)}/></label>
 <label>Category<select name="category" defaultValue={String(l.category)}>{categories.map(c=><option key={c}>{c}</option>)}</select></label>
 <label>Location<input name="location" required minLength={2} maxLength={160} defaultValue={String(l.location)}/></label>
@@ -233,14 +240,13 @@ export default function Account() {
 <button className="goldButton" disabled={busy||Boolean(profile?.suspended)}>Save changes & submit for review</button>
 {message&&<p role="status">{message}</p>}
 </form></details>:<p className="muted">Editing is locked once bids are placed or the auction is closed.</p>}
-</article>):<p>No listings yet. Submit your first asset below.</p>}</section>}
+</article>):<p>No listings yet. Use “Submit an asset” above.</p>}</section>}
         {visibleTab==="Settings"&&activeReady&&activeType==="buyer"&&<section className="portalPanel"><h2>Bidder verification</h2><p>Buyer setup unlocks browsing and saved lists. Staff must verify your identity before bidding. You can revisit verification to upload evidence.</p><button onClick={()=>setOnboardingType("buyer")}>Update buyer details & verification</button></section>}
-        {["Watchlist","Favourites"].includes(visibleTab)&&activeReady&&activeType==="buyer"&&<section><div className="sectionHeading"><h2>{visibleTab}</h2><button onClick={()=>void run(refresh,"Saved items refreshed")}>Refresh</button></div>{!catalogueView.length?<div className="portalPanel"><h3>Nothing saved here yet.</h3><p>Browse auctions and save the assets that interest you.</p><Link href="/#auctions">Browse auctions →</Link></div>:<div className="portalGrid">{catalogueView.map(lot=><article className="portalPanel" key={String(lot.id)}>
+        {["Watchlist"].includes(visibleTab)&&activeReady&&activeType==="buyer"&&<section><div className="sectionHeading"><h2>{visibleTab}</h2><button onClick={()=>void run(refresh,"Saved items refreshed")}>Refresh</button></div>{!catalogueView.length?<div className="portalPanel"><h3>Nothing saved here yet.</h3><p>Browse auctions and save the assets that interest you.</p><Link href="/#auctions">Browse auctions →</Link></div>:<div className="portalGrid">{catalogueView.map(lot=><article className="portalPanel" key={String(lot.id)}>
           {lot.image_path&&<img className="lotImage" src={listingImageUrl(lot.image_path)} alt={String(lot.title)}/>}
           <p className="eyebrow">{lot.category} · {label(lot.status)}</p><h3>{lot.title}</h3><p>{lot.description}</p><p>{lot.location}</p><strong className="price">{currency(lot.current_bid)}</strong><p>{lot.bid_count} bids · {lot.has_reserve?(lot.reserve_met?"Reserve met":"Reserve not met"):"No reserve"}</p><p>Ends {new Date(String(lot.end_at)).toLocaleString("en-MT")}</p>
           {maxima.find(m=>m.auction_id===lot.id)&&<p>Your private maximum: {currency(maxima.find(m=>m.auction_id===lot.id)?.amount)}</p>}
           <button disabled={busy} onClick={()=>void run(async()=>{await rpc("ir_watch",{p_auction:lot.id,p_watch:!watched.includes(String(lot.id))});},"Watchlist updated")}>{watched.includes(String(lot.id))?"Remove from watchlist":"Watch this auction"}</button>
-          <button disabled={busy} onClick={()=>void run(async()=>{await rpc("ir_favourite",{p_auction:lot.id,p_saved:!favourites.includes(String(lot.id))});},"Favourites updated")}>{favourites.includes(String(lot.id))?"Remove favourite":"Add to favourites"}</button>
           {lot.status==="live"&&<form onSubmit={e=>bid(e,String(lot.id))}><label>Your maximum (€)<input name="amount" type="number" min={Number(lot.current_bid)} step="0.01" required/></label><button className="goldButton" disabled={busy||!connected||!trading||Boolean(profile?.suspended)}>Confirm maximum bid</button><small>Proxy bidding applies. Bids in the last two minutes extend the end time.</small></form>}
         </article>)}</div>}</section>}
 

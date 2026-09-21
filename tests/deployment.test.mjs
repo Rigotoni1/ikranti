@@ -74,7 +74,7 @@ test('malformed payloads are rejected at the API boundary', async () => {
 test('secure account portal is available',async()=>{
   const response=await fetch(`${base}/account`);
   assert.equal(response.status,200);
-  assert.match(await response.text(),/YOUR MARKETPLACE ACCOUNT/);
+  assert.match(await response.text(),/class="activeAccount"[^>]*>Your account/);
   assert.match(response.headers.get('cache-control'),/no-store/);
 });
 
