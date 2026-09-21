@@ -142,8 +142,7 @@ export default function Home() {
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell</button><a href="#how">How it works</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
-          <a className="textButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? "My account" : "Sign in"}</a>
-          <button className="goldButton" onClick={openSell}>Sell an asset</button>
+          <a className="goldButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? "My account" : "Sign in"}</a>
         </div>
       </header>
 
