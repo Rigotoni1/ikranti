@@ -23,7 +23,7 @@ export default function Account() {
   const [onboardingType,setOnboardingType] = useState<AccountType|null>(null);
   const [onboarding,setOnboarding] = useState<OnboardingRecord[]>([]);
   const [favourites,setFavourites] = useState<string[]>([]);
-  const [tab,setTab] = useState("Auctions");
+  const [tab,setTab] = useState("Watchlist");
   const [sellerForm,setSellerForm] = useState<"asset"|"verification"|"documents"|null>(null);
   const [message,setMessage] = useState("");
   const [busy,setBusy] = useState(false);
@@ -177,12 +177,12 @@ export default function Account() {
   }
   const activeType=profile?.active_account as AccountType|undefined;
   const activeReady=onboarding.some(o=>o.account_type===activeType&&o.completed_at);
-  const tabs=[...(activeReady?(activeType==="seller"?["Selling"]:["Auctions","Watchlist","Favourites"]):[]),"Orders","Notifications","Settings","Security"];
-  const visibleTab=tabs.includes(tab)?tab:(activeReady?(activeType==="seller"?"Selling":"Auctions"):"Settings");
+  const tabs=[...(activeReady?(activeType==="seller"?["Selling"]:["Watchlist","Favourites"]):[]),"Orders","Notifications","Settings","Security"];
+  const visibleTab=tabs.includes(tab)?tab:(activeReady?(activeType==="seller"?"Selling":"Watchlist"):"Settings");
   const catalogueView=catalogue.filter(l=>visibleTab==="Watchlist"?watched.includes(String(l.id)):visibleTab==="Favourites"?favourites.includes(String(l.id)):true);
   async function switchAccount(type:AccountType) {
     if(!onboarding.some(o=>o.account_type===type&&o.completed_at)){setOnboardingType(type);return;}
-    await run(async()=>{await rpc("ir_switch_account",{p_type:type});setTab(type==="seller"?"Selling":"Auctions");},`Switched to ${type} account`);
+    await run(async()=>{await rpc("ir_switch_account",{p_type:type});setTab(type==="seller"?"Selling":"Watchlist");},`Switched to ${type} account`);
   }
 
   return <main className="portal">
@@ -202,7 +202,7 @@ export default function Account() {
         </form>}
         <div className="portalLinks"><button onClick={()=>setMode(mode==="signup"?"signin":"signup")}>{mode==="signup"?"Already registered? Sign in":"Create an account"}</button><button onClick={()=>setMode("recovery")}>Forgot password?</button></div>
         <p className="muted">Email verification is required. Seller documents are private and reviewed before listing approval. Administrator access requires a verified, authorised account.</p>
-      </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Auctions");setOnboardingType(null);}}/>:<>
+      </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Watchlist");setOnboardingType(null);}}/>:<>
         <p className="accountContext">{activeReady?`${activeType} account`:"Complete your account setup"}</p>
         {activeReady&&activeType==="buyer"&&<p><Link href="/account/bids">My bids — track your auctions →</Link></p>}
         <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={visibleTab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>
@@ -225,7 +225,7 @@ export default function Account() {
 </form></details>:<p className="muted">Editing is locked once bids are placed or the auction is closed.</p>}
 </article>):<p>No listings yet. Submit your first asset below.</p>}</section>}
         {visibleTab==="Settings"&&activeReady&&activeType==="buyer"&&<section className="portalPanel"><h2>Bidder verification</h2><p>Buyer setup unlocks browsing and saved lists. Staff must verify your identity before bidding. You can revisit verification to upload evidence.</p><button onClick={()=>setOnboardingType("buyer")}>Update buyer details & verification</button></section>}
-        {["Auctions","Watchlist","Favourites"].includes(visibleTab)&&activeReady&&activeType==="buyer"&&<section><div className="sectionHeading"><h2>{visibleTab==="Auctions"?"Approved auctions":visibleTab}</h2><button onClick={()=>void run(refresh,"Catalogue refreshed")}>Refresh</button></div>{!catalogueView.length?<div className="portalPanel"><h3>{visibleTab==="Auctions"?"The first collection is coming.":"Nothing saved here yet."}</h3><p>{visibleTab==="Auctions"?"No listings have been approved yet. Seller submissions appear here after review.":"Browse auctions and save the assets that interest you."}</p><button onClick={()=>setTab(visibleTab==="Auctions"?"Settings":"Auctions")}>{visibleTab==="Auctions"?"Manage account types":"Browse auctions"} →</button></div>:<div className="portalGrid">{catalogueView.map(lot=><article className="portalPanel" key={String(lot.id)}>
+        {["Watchlist","Favourites"].includes(visibleTab)&&activeReady&&activeType==="buyer"&&<section><div className="sectionHeading"><h2>{visibleTab}</h2><button onClick={()=>void run(refresh,"Saved items refreshed")}>Refresh</button></div>{!catalogueView.length?<div className="portalPanel"><h3>Nothing saved here yet.</h3><p>Browse auctions and save the assets that interest you.</p><Link href="/#auctions">Browse auctions →</Link></div>:<div className="portalGrid">{catalogueView.map(lot=><article className="portalPanel" key={String(lot.id)}>
           {lot.image_path&&<img className="lotImage" src={listingImageUrl(lot.image_path)} alt={String(lot.title)}/>}
           <p className="eyebrow">{lot.category} · {label(lot.status)}</p><h3>{lot.title}</h3><p>{lot.description}</p><p>{lot.location}</p><strong className="price">{currency(lot.current_bid)}</strong><p>{lot.bid_count} bids · {lot.has_reserve?(lot.reserve_met?"Reserve met":"Reserve not met"):"No reserve"}</p><p>Ends {new Date(String(lot.end_at)).toLocaleString("en-MT")}</p>
           {maxima.find(m=>m.auction_id===lot.id)&&<p>Your private maximum: {currency(maxima.find(m=>m.auction_id===lot.id)?.amount)}</p>}
