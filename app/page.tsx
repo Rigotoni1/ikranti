@@ -39,7 +39,6 @@ function Countdown({ endAt }: { endAt:string }) {
 function Mark() { return <span className="mark" aria-hidden="true">I</span>; }
 
 export default function Home() {
-  const [activeAccount,setActiveAccount] = useState<string|null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [data, setData] = useState<MarketplaceData>(emptyData);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -52,7 +51,7 @@ export default function Home() {
   const [bidMessage, setBidMessage] = useState("");
   const pendingBid = useRef<{ auction:string; amount:number; id:string } | null>(null);
   const [serviceError, setServiceError] = useState("");
-  const [information, setInformation] = useState<"terms" | "privacy" | "cookies" | null>(null);
+  const [information, setInformation] = useState<"privacy" | "cookies" | null>(null);
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
 
@@ -63,13 +62,9 @@ export default function Home() {
       const {data:{user}}=await browserClient().auth.getUser();
       if(!live||version!==generation)return;
       setSignedIn(Boolean(user));
-      if(!user){setActiveAccount(null);setData(d=>({...d,watched:[]}));return;}
-      const [profile,saved]=await Promise.all([
-        browserClient().from("ir_profiles").select("active_account").eq("id",user.id).single(),
-        browserClient().from("ir_watchlist").select("auction_id").eq("user_id",user.id)
-      ]);
+      if(!user){setData(d=>({...d,watched:[]}));return;}
+      const saved=await browserClient().from("ir_watchlist").select("auction_id").eq("user_id",user.id);
       if(!live||version!==generation)return;
-      setActiveAccount(profile.data?.active_account||null);
       if(!saved.error)setData(d=>({...d,watched:(saved.data||[]).map(r=>r.auction_id)}));
     };
     const {data:{subscription}}=browserClient().auth.onAuthStateChange(()=>{window.setTimeout(()=>void update(),0);});
@@ -159,7 +154,7 @@ export default function Home() {
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell</button><a href="#how">How it works</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
-          <a className="goldButton" href="/account" aria-busy={signedIn === null}>{signedIn === null ? "Account…" : signedIn ? activeAccount==="seller"?"Seller account":activeAccount==="buyer"?"Buyer account":"My account" : "Sign in"}</a>
+          <a className="goldButton" href="/account">Account</a>
         </div>
       </header>
 
@@ -231,7 +226,7 @@ export default function Home() {
 
       <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Create your own account and apply to sell. Identity, ownership and category-specific documents are reviewed privately before a listing is approved.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
 
-      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Seller-submitted listings for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><button onClick={() => setInformation("terms")}>Terms</button><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
+      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Seller-submitted listings for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><a href="/terms">Terms & Conditions</a><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
 
       {selected && <div className="overlay" role="dialog" aria-modal="true" aria-label={selected.title}>
         <div className="lotPanel">
@@ -254,7 +249,7 @@ export default function Home() {
       {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><h2>Your Irkanti account</h2><p>Register or sign in securely with your own email address. Complete buyer onboarding and identity verification before bidding.</p><a className="goldButton" href="/account">Register or sign in →</a></div></div>}
 
 
-      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> MARKETPLACE INFORMATION</p><h2>{information === "terms" ? "Marketplace information" : information === "privacy" ? "Your personal data" : "Local preferences"}</h2><p>{information === "terms" ? "Listings are submitted by sellers and reviewed before publication. Bids are recorded against verified buyer accounts. Online payment collection is not yet available. Final marketplace terms and fees have not yet been published." : information === "privacy" ? "Individual account data and private seller documents are stored in Supabase. Documents are accessible to their owner and authorised administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. Upload only documents relevant to verification or your listing." : "Secure account access uses essential session cookies. Shared preview profiles have been retired. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
+      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> MARKETPLACE INFORMATION</p><h2>{information === "privacy" ? "Your personal data" : "Local preferences"}</h2><p>{information === "privacy" ? "Individual account data and private seller documents are stored in Supabase. Documents are accessible to their owner and authorised administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. Upload only documents relevant to verification or your listing." : "Secure account access uses essential session cookies. Shared preview profiles have been retired. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
       {toast && <div className="toast" role="status"><span>◇</span>{toast}</div>}
     </main>
   );

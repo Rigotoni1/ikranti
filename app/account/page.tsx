@@ -8,6 +8,7 @@ import { supabaseUrl } from "@/lib/supabase/config";
 import "./portal.css";
 import { UploadFile } from "./upload-file";
 import { Onboarding, AccountType, OnboardingRecord } from "./onboarding";
+import { CheckEmail, type PendingVerification } from "./check-email";
 
 type Row = Record<string, string | number | boolean | null>;
 const categories = ["Property","Motor Cars","Boats","Watches & Jewellery","Art & Antiques","Collectables"];
@@ -21,6 +22,9 @@ export default function Account() {
   const [ready,setReady] = useState(false);
   const [mode,setMode] = useState("signin");
   const [signupType,setSignupType] = useState<AccountType|null>(null);
+  const [pendingVerification,setPendingVerification] = useState<PendingVerification|null>(null);
+  const [authEmail,setAuthEmail] = useState("");
+  const [authName,setAuthName] = useState("");
   const [onboardingType,setOnboardingType] = useState<AccountType|null>(null);
   const [onboarding,setOnboarding] = useState<OnboardingRecord[]>([]);
   const [tab,setTab] = useState("Watchlist");
@@ -58,6 +62,7 @@ export default function Account() {
     if (version!==loading.current) return;
     if (catalog.error) throw new Error(catalog.error.message);
     setCatalogue(catalog.data||[]); setTrading(Boolean(status.data?.tradingEnabled)); setUser(current);
+    if (current?.email_confirmed_at) setPendingVerification(null);
     if (!current) { setProfile(null); setReady(true); return; }
     const results = await Promise.all([
       client.from("ir_profiles").select("*").eq("id",current.id).single(),
@@ -136,17 +141,43 @@ export default function Account() {
     return result.data;
   }
   function auth(event:FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const data = new FormData(event.currentTarget);
+    event.preventDefault(); const form=event.currentTarget; const data = new FormData(form);
     void run(async()=>{
-      const email=field(data,"email"); const password=field(data,"password");
+      const email=field(data,"email").trim(); const password=field(data,"password");
       const redirect = `${window.location.origin}/auth/confirm`;
-      if(mode==="signup"&&!signupType)throw new Error("Choose a buyer or seller account first.");
-      const result = mode==="signup" ? await client.auth.signUp({email,password,options:{data:{name:field(data,"name"),onboarding_intent:signupType},emailRedirectTo:redirect}})
-        : mode==="recovery" ? await client.auth.resetPasswordForEmail(email,{redirectTo:`${redirect}?recovery=1`})
+      if(mode==="signup") {
+        if(!signupType)throw new Error("Choose a buyer or seller account first.");
+        const result=await client.auth.signUp({email,password,options:{data:{name:field(data,"name"),onboarding_intent:signupType},emailRedirectTo:redirect}});
+        if(result.error)throw result.error;
+        // A successful send request is not proof of inbox delivery or verification.
+        // Do not retain the password while the user checks their email.
+        const passwordInput=form.elements.namedItem("password");
+        if(passwordInput instanceof HTMLInputElement)passwordInput.value="";
+        if(!result.data.session?.user.email_confirmed_at)setPendingVerification({email,accountType:signupType,requestedAt:Date.now()});
+        return;
+      }
+      const result = mode==="recovery" ? await client.auth.resetPasswordForEmail(email,{redirectTo:`${redirect}?recovery=1`})
         : mode==="password" ? await client.auth.updateUser({password}) : await client.auth.signInWithPassword({email,password});
       if(result.error) throw new Error(result.error.message);
       if(mode==="password") setMode("signin");
-    },mode==="signup" ? "Check your email to verify your account. Delivery depends on email setup." : mode==="recovery" ? "If the address is registered, a recovery email will be sent." : "Account updated");
+    },mode==="signup" ? "" : mode==="recovery" ? "If the address is registered, a recovery email will be sent." : "Account updated");
+  }
+
+  async function resendVerification() {
+    if(!pendingVerification)return;
+    const {error}=await client.auth.resend({type:"signup",email:pendingVerification.email,options:{emailRedirectTo:`${window.location.origin}/auth/confirm`}});
+    if(error)throw error;
+  }
+  async function checkVerification() {
+    const {data,error}=await client.auth.getUser();
+    if(error&&error.name!=="AuthSessionMissingError")throw error;
+    if(!data.user?.email_confirmed_at)return false;
+    await refresh();
+    return true;
+  }
+  function leaveVerification(nextMode:"signup"|"signin") {
+    setPendingVerification(null);setMessage("");setMode(nextMode);
+    window.requestAnimationFrame(()=>document.getElementById("account-email")?.focus());
   }
   function validateListing(data:FormData) {
     const end=new Date(field(data,"end")).getTime();
@@ -194,22 +225,22 @@ export default function Account() {
 
   return <main className="portal">
     <header className="portalHeader"><Link href="/" className="brand">IRKANTI</Link><Link className="activeAccount" href="/account?tab=settings" onClick={()=>setTab("Settings")}>{user?(activeReady?`${activeType === "seller" ? "Seller" : "Buyer"} account · Switch`:"Account setup"):"Your account"}</Link>{profile?.role==="admin"&&<Link href="/admin">Administration →</Link>}{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
-    <div className="portalNotice">{trading?"Live marketplace":"Bidding is currently paused"} · <span className={connected?"online":"offline"}>{connected?"Live updates connected":"Reconnecting live updates…"}</span></div>
-    <div className="portalBody">
-      <p className="eyebrow">MALTA · EXCEPTIONAL ASSETS</p><h1>{user?`Welcome, ${profile?.name||"member"}`:"Your next chapter starts here."}</h1>
+    {!pendingVerification&&<div className="portalNotice">{trading?"Live marketplace":"Bidding is currently paused"} · <span className={connected?"online":"offline"}>{connected?"Live updates connected":"Reconnecting live updates…"}</span></div>}
+    <div className={`portalBody${pendingVerification?" verificationBody":""}`}>
+      {!pendingVerification&&<><p className="eyebrow">MALTA · EXCEPTIONAL ASSETS</p><h1>{user?`Welcome, ${profile?.name||"member"}`:"Your next chapter starts here."}</h1></>}
       {message&&<p className="portalMessage" role="status">{message}</p>}
-      {!ready?<p>Loading your secure account…</p>:(!user||mode==="password")?<section className="portalPanel authPanel">
+      {pendingVerification?<CheckEmail pending={pendingVerification} onResend={resendVerification} onCheck={checkVerification} onEditEmail={()=>leaveVerification("signup")} onSignIn={()=>leaveVerification("signin")}/>:!ready?<p>Loading your secure account…</p>:(!user||mode==="password")?<section className="portalPanel authPanel">
         <h2>{mode==="signup"?"Create your account":mode==="recovery"?"Recover your password":mode==="password"?"Set a new password":"Sign in"}</h2>
         {mode==="signup"&&<fieldset className="roleChoice"><legend>How would you like to start?</legend>{(["buyer","seller"] as const).map(t=><button type="button" key={t} aria-pressed={signupType===t} className={signupType===t?"goldButton":""} onClick={()=>setSignupType(t)}><strong>{t==="buyer"?"Buy & collect":"Sell your assets"}</strong><span>{t==="buyer"?"Explore auctions and build your watchlist.":"Verify your seller profile and submit your inventory."}</span></button>)}</fieldset>}
         {(mode!=="signup"||signupType)&&<form onSubmit={auth}>
-          {mode==="signup"&&<label>Your name<input name="name" required maxLength={120} autoComplete="name"/></label>}
-          {mode!=="password"&&<label>Email address<input name="email" type="email" required autoComplete="email"/></label>}
+          {mode==="signup"&&<label>Your name<input name="name" required maxLength={120} autoComplete="name" value={authName} onChange={e=>setAuthName(e.target.value)}/></label>}
+          {mode!=="password"&&<label>Email address<input id="account-email" name="email" type="email" required autoComplete="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)}/></label>}
           {mode!=="recovery"&&<label>Password<input name="password" type="password" required minLength={12} autoComplete={mode==="signin"?"current-password":"new-password"}/><small>Use at least 12 characters and a unique password.</small></label>}
           <button className="goldButton" disabled={busy}>{busy?"Please wait…":mode==="signup"?"Register & verify email":mode==="recovery"?"Send recovery email":mode==="password"?"Save password":"Sign in"}</button>
         </form>}
-        <div className="portalLinks"><button onClick={()=>setMode(mode==="signup"?"signin":"signup")}>{mode==="signup"?"Already registered? Sign in":"Create an account"}</button><button onClick={()=>setMode("recovery")}>Forgot password?</button></div>
+        <div className="portalLinks"><button disabled={busy} onClick={()=>setMode(mode==="signup"?"signin":"signup")}>{mode==="signup"?"Already registered? Sign in":"Create an account"}</button><button disabled={busy} onClick={()=>setMode("recovery")}>Forgot password?</button></div>
         <p className="muted">Email verification is required. Seller documents are private and reviewed before listing approval. Administrator access requires a verified, authorised account.</p>
-      </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Watchlist");setOnboardingType(null);}}/>:<>
+      </section>:onboardingType?<Onboarding key={onboardingType} type={onboardingType} record={onboarding.find(o=>o.account_type===onboardingType)} documents={documents.map(d=>({kind:String(d.kind),auction_id:d.auction_id}))} onDocumentsSaved={async()=>{const {data,error}=await client.from("ir_documents").select("*").eq("user_id",user.id);if(error)throw error;setDocuments((data||[]) as Row[]);}} onCancel={()=>{setOnboardingType(null);setTab("Settings");}} onComplete={async()=>{await refresh();setTab(onboardingType==="seller"?"Selling":"Watchlist");setOnboardingType(null);}}/>:<>
         <p className="accountContext">{activeReady?`${activeType} account`:"Complete your account setup"}</p>
         {activeReady&&activeType==="buyer"&&<p><Link href="/account/bids">My bids — track your auctions →</Link></p>}
         <nav className="portalTabs" aria-label="Account sections">{tabs.map(t=><button className={visibleTab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}{t==="Notifications"&&notifications.some(n=>!n.read_at)?" •":""}</button>)}</nav>

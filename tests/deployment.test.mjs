@@ -78,6 +78,18 @@ test('secure account portal is available',async()=>{
   assert.match(response.headers.get('cache-control'),/no-store/);
 });
 
+test('terms and the immutable consent version are publicly available',async()=>{
+  for (const path of ['/terms','/terms/2026-09-22']) {
+    const response=await fetch(`${base}${path}`);
+    assert.equal(response.status,200);
+    const html=await response.text();
+    assert.match(html,/Terms &amp; Conditions/);
+    assert.match(html,/10% of the final winning price/);
+    assert.match(html,/within 30 calendar days after the closing date/);
+  }
+  assert.match(await (await fetch(base)).text(),/href="\/terms">Terms &amp; Conditions/);
+});
+
 test('private upload endpoint rejects cross-origin and unauthenticated requests',async()=>{
   assert.equal((await fetch(`${base}/api/account/upload`,{method:'POST',headers:{origin:'https://attacker.invalid'}})).status,403);
   assert.equal((await fetch(`${base}/api/account/upload`,{method:'POST',headers:{origin:base}})).status,401);
