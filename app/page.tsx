@@ -3,6 +3,9 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { browserClient } from "../lib/supabase/browser";
+import { BidHistory } from "./bid-history";
+import { useBidHistory } from "./use-bid-history";
+import { useAuctionEnded } from "./use-auction-ended";
 
 type Auction = {
   id: string; sellerId: string; sellerName: string; title: string; category: string;
@@ -12,7 +15,7 @@ type Auction = {
   views: number; watchCount: number;
 };
 
-type Profile = { id: string; name: string; initials: string; email: string; role: "buyer" | "seller" | "admin"; verified: boolean };
+type Profile = { id: string; name: string; initials: string; email: string; role: "buyer" | "admin"; verified: boolean };
 type BidEvent = { auction_id: string; visible_amount: number; created_at: string; initials: string };
 type MarketplaceData = { user: Profile | null; auctions: Auction[]; watched: string[]; myLots: Auction[]; recentBids: BidEvent[]; categories: string[]; isPreview?:boolean };
 
@@ -40,6 +43,8 @@ function Mark() { return <span className="mark" aria-hidden="true">I</span>; }
 
 export default function Home() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [viewerId, setViewerId] = useState<string | null | undefined>(undefined);
+  const [bidHistoryRevision, setBidHistoryRevision] = useState(0);
   const [data, setData] = useState<MarketplaceData>(emptyData);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [category, setCategory] = useState("All assets");
@@ -62,12 +67,18 @@ export default function Home() {
       const {data:{user}}=await browserClient().auth.getUser();
       if(!live||version!==generation)return;
       setSignedIn(Boolean(user));
+      setViewerId(user?.id ?? null);
       if(!user){setData(d=>({...d,watched:[]}));return;}
       const saved=await browserClient().from("ir_watchlist").select("auction_id").eq("user_id",user.id);
       if(!live||version!==generation)return;
       if(!saved.error)setData(d=>({...d,watched:(saved.data||[]).map(r=>r.auction_id)}));
     };
-    const {data:{subscription}}=browserClient().auth.onAuthStateChange(()=>{window.setTimeout(()=>void update(),0);});
+    const {data:{subscription}}=browserClient().auth.onAuthStateChange((_event,session)=>{
+      // Drop the previous viewer's personalized history immediately on account changes.
+      setViewerId(session?.user.id ?? null);
+      window.setTimeout(()=>void update(),0);
+    });
+    void update();
     const visible=()=>{if(document.visibilityState==="visible")void update();};
     document.addEventListener("visibilitychange",visible);
     return ()=>{live=false;++generation;subscription.unsubscribe();document.removeEventListener("visibilitychange",visible);};
@@ -85,7 +96,15 @@ export default function Home() {
     return () => { active = false; };
   }, []);
 
-  const selected = data.auctions.find((lot) => lot.id === selectedId) || null;
+  const bidHistory = useBidHistory(selectedId, viewerId, bidHistoryRevision);
+  const selectedLot = data.auctions.find((lot) => lot.id === selectedId) || null;
+  const liveLot = bidHistory.history?.auction;
+  const selected = selectedLot && liveLot ? { ...selectedLot, currentBid: liveLot.current_bid,
+    bidCount: liveLot.bid_count, endAt: liveLot.end_at, status: liveLot.status,
+    hasReserve: liveLot.has_reserve, reserveMet: liveLot.reserve_met } : selectedLot;
+  const auctionEnded = useAuctionEnded(selected?.endAt, selected?.status);
+  const canBid = selected?.status === "live" && !auctionEnded;
+  const nextBid = selected ? selected.bidCount ? selected.currentBid + bidStep(selected.currentBid) : selected.startPrice : 0;
   const reserveIsMet = selected ? (selected.reserveMet ?? (selected.reservePrice ?? 0) <= selected.currentBid) : false;
   const reserveExists = selected ? (selected.hasReserve ?? (selected.reservePrice ?? 0) > 0) : false;
   const filtered = useMemo(() => data.auctions.filter((lot) => {
@@ -128,11 +147,12 @@ export default function Home() {
       if (result?.error) throw new Error(String(result.error));
       if (typeof result?.leading !== "boolean") throw new Error("Bid result could not be confirmed. Retry the same amount to check safely.");
       pendingBid.current = null;
-      setBidMessage(result.leading ? "Bid accepted. You’re leading." : "Bid accepted. Another bidder’s maximum remains higher.");
+      setBidHistoryRevision(value => value + 1);
+      setBidMessage(result.leading ? "Bid accepted. Follow the bidding room for your latest position." : "Bid accepted, then immediately outbid by an existing automatic bid. See the bidding room for the sequence.");
       // A failed catalogue refresh must not turn an accepted bid into a reported failure.
       try {
         const response = await fetch("/api/marketplace", {cache:"no-store"});
-        if (response.ok) { const next=await response.json() as MarketplaceData; setData(current=>({...next,watched:current.watched})); }
+        if (response.ok) { const next=await response.json() as MarketplaceData; setData(current=>({...next,watched:current.watched,auctions:[...next.auctions,...current.auctions.filter(lot=>lot.id===selected.id&&!next.auctions.some(fresh=>fresh.id===lot.id))]})); }
       } catch { /* Keep the confirmed result; the catalogue can refresh later. */ }
     } catch (error) {
       setBidMessage(error instanceof Error ? error.message : "Bid result could not be confirmed. Retry the same amount to check safely.");
@@ -142,16 +162,14 @@ export default function Home() {
   const openLot = (id:string) => {
     setBidMessage("");
     const lot = data.auctions.find((item) => item.id === id);
-    setSelectedId(id); if (lot) setMaxBid(String(lot.currentBid + bidStep(lot.currentBid)));
+    setSelectedId(id); if (lot) setMaxBid(String(lot.bidCount ? lot.currentBid + bidStep(lot.currentBid) : lot.startPrice));
   };
-
-  const openSell = () => { window.location.assign("/account"); };
 
   return (
     <main id="top">
       <header className="nav shell">
         <a className="brand" href="#top" aria-label="Irkanti home"><Mark/><span>IRKANTI</span></a>
-        <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell</button><a href="#how">How it works</a></nav>
+        <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="#how">How to bid</a><a href="/account?tab=bids">My bids</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
           <a className="goldButton" href="/account">Account</a>
@@ -163,11 +181,10 @@ export default function Home() {
         <div className="shell heroInner">
           <p className="eyebrow"><span/> MALTA’S PREMIER AUCTION MARKETPLACE</p>
           <h1>Remarkable assets.<br/><em>Exceptional outcomes.</em></h1>
-          <p className="heroCopy">A new home for Malta’s distinctive property, vehicles, boats, watches, art and antiques. Browse approved listings or submit your own asset.</p>
-          <div className="heroActions"><a className="goldButton large" href="#auctions">Explore live auctions</a><button className="ghostButton large" onClick={openSell}>Sell with Irkanti <b>↗</b></button></div>
-          <div className="proof"><span>Malta-focused</span><span>Automatic bidding</span><span>Seller-submitted assets</span></div>
+          <p className="heroCopy">Discover Malta’s distinctive property, vehicles, boats, watches, art and antiques. Follow the assets you love and bid in auctions managed by the Irkanti team.</p>
+          <div className="heroActions"><a className="goldButton large" href="#auctions">Explore live auctions</a><a className="ghostButton large" href="/account?tab=watchlist">Your watchlist <b>↗</b></a></div>
+          <div className="proof"><span>Malta-focused</span><span>Automatic bidding</span><span>Team-managed auctions</span></div>
         </div>
-        <div className="heroLot"><small>SELL WITH IRKANTI</small><strong>Your asset. Its next chapter.</strong><button onClick={openSell} aria-label="Submit an asset">↗</button></div>
       </section>
 
       <section className="auctionSection shell" id="auctions">
@@ -179,7 +196,7 @@ export default function Home() {
           </div>
           <label className="searchBox"><span>⌕</span><input id="auction-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search auctions" aria-label="Search auctions"/></label>
         </div>
-        {!filtered.length && <div className="previewNotice"><p>{serviceError ? "Listings could not be loaded." : "No approved auctions are available yet."}</p><button className="goldButton" onClick={openSell}>Submit your first asset</button></div>}
+        {!data.auctions.length && <div className="previewNotice"><p>{serviceError ? "Listings could not be loaded. Please refresh to try again." : "Our team is preparing the next auctions. Check back soon."}</p><a className="goldButton" href="/account">Your account</a></div>}
         <div className="lotGrid">
           {filtered.map((lot) => <article className="lot" key={lot.id}>
             <button className="lotImage" style={{backgroundImage:`url(${lot.image})`}} onClick={() => openLot(lot.id)} aria-label={`View ${lot.title}`}>
@@ -193,7 +210,7 @@ export default function Home() {
             </div>
           </article>)}
         </div>
-        {filtered.length === 0 && <div className="emptyState"><Mark/><h3>No matching lots</h3><p>Try another category or a broader search.</p></div>}
+        {data.auctions.length > 0 && filtered.length === 0 && <div className="emptyState"><Mark/><h3>No matching lots</h3><p>Try another category or a broader search.</p></div>}
       </section>
 
       <section className="categorySection" id="categories">
@@ -213,43 +230,44 @@ export default function Home() {
       </section>
 
       <section className="trustSection shell" id="how">
-        <div className="trustIntro"><p className="eyebrow dark"><span/> THE MARKETPLACE VISION</p><h2>Serious assets deserve<br/><em>a better way to sell.</em></h2><p>Try the submission and bidding journey below. Identity verification, specialist review, payments and handover services must be established before real trading opens.</p></div>
+        <div className="trustIntro"><p className="eyebrow dark"><span/> HOW TO BID</p><h2>Find something exceptional.<br/><em>Make your next move.</em></h2><p>Keep a watchlist, review the lot details and follow each bid live. Our team manages the listings; your account keeps your auction activity in one place.</p></div>
         <div className="steps">
-          <article><span>01</span><i>⌁</i><h3>Submit your asset</h3><p>Submit your asset with photographs, a starting bid, a confidential reserve and ownership evidence.</p></article>
-          <article><span>02</span><i>◈</i><h3>Prepare the auction</h3><p>Submissions enter a review queue. They do not automatically become public auctions.</p></article>
+          <article><span>01</span><i>⌁</i><h3>Create your account</h3><p>Verify your email, complete your details and submit your ID. Staff approval is required before bidding.</p></article>
+          <article><span>02</span><i>◈</i><h3>Build your watchlist</h3><p>Save the lots that interest you. Review photographs, condition, terms and closing times before bidding.</p></article>
           <article><span>03</span><i>↗</i><h3>The market decides</h3><p>Place a private maximum bid. Bids in the final two minutes extend the auction.</p></article>
           <article><span>04</span><i>✓</i><h3>After the auction</h3><p>Online payments are not available yet. Winning auctions appear in your account for follow-up.</p></article>
         </div>
       </section>
 
-      <section className="numbers"><div className="shell"><div><strong>{data.auctions.length}</strong><span>SAMPLE AUCTIONS</span></div><div><strong>3</strong><span>PREVIEW ACCOUNTS</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>ASSET CATEGORIES</span></div></div></section>
+      <section className="numbers"><div className="shell"><div><strong>{data.auctions.length}</strong><span>LIVE AUCTIONS</span></div><div><strong>EUR</strong><span>BID CURRENCY</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>ASSET CATEGORIES</span></div></div></section>
 
-      <section className="sellBanner" id="sell"><div className="shell"><div><p className="eyebrow"><span/> YOUR ASSET. THE RIGHT AUDIENCE.</p><h2>Ready to discover<br/><em>what it’s truly worth?</em></h2></div><div><p>Create your own account and apply to sell. Identity, ownership and category-specific documents are reviewed privately before a listing is approved.</p><button className="goldButton large" onClick={openSell}>Start your submission</button></div></div></section>
+      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Team-managed auctions for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="/account?tab=watchlist">Your watchlist</a><a href="#how">How it works</a></div><div><h4>Buyer help</h4><a href="/account?tab=settings">Account & verification</a><a href="/account?tab=bids">My bids</a><a href="/terms">Bidding & payment terms</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><a href="/terms">Terms & Conditions</a><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
 
-      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Seller-submitted listings for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><button onClick={openSell}>Sell an asset</button><a href="#how">How it works</a></div><div><h4>Trust</h4><a href="#how">Buyer protection</a><a href="#how">Verification</a><a href="#how">Bidding rules</a><a href="#how">Fees</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><a href="/terms">Terms & Conditions</a><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
-
-      {selected && <div className="overlay" role="dialog" aria-modal="true" aria-label={selected.title}>
+      {selected && <div className="overlay auctionOverlay" role="dialog" aria-modal="true" aria-label={selected.title}>
+        <div className="auctionRoom">
+        <BidHistory key={`${selected.id}:${viewerId ?? 'guest'}`} {...bidHistory}/>
         <div className="lotPanel">
           <button className="close" onClick={() => setSelectedId(null)} aria-label="Close">×</button>
-          <div className="panelImage" style={{backgroundImage:`url(${selected.image})`}}><span className="live">● LIVE AUCTION</span><div className="photoCount">▧ Seller photograph</div></div>
+          <div className="panelImage" style={{backgroundImage:`url(${selected.image})`}}><span className="live">{canBid ? "● LIVE AUCTION" : "BIDDING ENDED"}</span><div className="photoCount">▧ Listing photograph</div></div>
           <div className="panelContent">
-            <p className="lotCategory">{selected.category.toUpperCase()}</p><h2>{selected.title}</h2><p className="location">⌖ {selected.location} · Offered by <b>{selected.sellerName}</b> ✓</p>
+            <p className="lotCategory">{selected.category.toUpperCase()}</p><h2>{selected.title}</h2><p className="location">⌖ {selected.location} · Auction managed by <b>Irkanti</b></p>
             <div className="panelStats"><div><small>CURRENT BID</small><strong>{euro.format(selected.currentBid)}</strong></div><div><small>TIME REMAINING</small><b><Countdown endAt={selected.endAt}/></b></div><div><small>BID ACTIVITY</small><b>{selected.bidCount} bids</b></div></div>
             <div className={`reserve ${!reserveIsMet ? "pending" : ""}`}><span>{!reserveIsMet ? "◇" : "✓"}</span><div><b>{!reserveExists ? "Offered without reserve" : reserveIsMet ? "Reserve met" : "Reserve not yet met"}</b><small>{!reserveExists || reserveIsMet ? "Winning bids remain subject to the applicable sale terms." : "The seller’s confidential minimum has not yet been reached."}</small></div></div>
-            <form className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={selected.currentBid + bidStep(selected.currentBid)} step={bidStep(selected.currentBid)} value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required disabled={busy}/></label><button className="goldButton large" disabled={busy || signedIn === null}>{busy ? "Placing bid…" : signedIn === null ? "Checking account…" : signedIn ? "Place bid" : "Sign in to bid"}</button></form>
+            <form id="lot-bid-form" className="bidForm" onSubmit={submitBid}><label>Your maximum bid<input type="number" min={nextBid} step="0.01" value={maxBid} onChange={(e) => setMaxBid(e.target.value)} required disabled={busy || !canBid}/></label><button className="goldButton large" disabled={busy || signedIn === null || !canBid}>{!canBid ? "Bidding ended" : busy ? "Placing bid…" : signedIn === null ? "Checking account…" : signedIn ? "Place bid" : "Sign in to bid"}</button></form>
             {bidMessage && <p role="status" aria-live="polite">{bidMessage}</p>}
-            <p className="proxyNote">We bid only as much as needed on your behalf. The next minimum is {euro.format(selected.currentBid + bidStep(selected.currentBid))}. Accepted bids are recorded against your account.</p>
+            <p className="proxyNote">We bid only as much as needed on your behalf. {canBid && <>The next minimum is {euro.format(nextBid)}. </>}Accepted bids are recorded against your account.</p>
+            <button className="mobileBidHistoryLink" onClick={() => document.getElementById("bid-history-title")?.scrollIntoView({block:"start"})}>View bid history ↓</button>
             <div className="panelActions"><button onClick={() => toggleWatch(selected.id)}>{data.watched.includes(selected.id) ? "◆ Watching" : "◇ Add to watchlist"}</button><button onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/?lot=${encodeURIComponent(selected.id)}#auctions`); notify("Link copied."); } catch { notify("Copy the page address to share this auction."); } }}>↗ Share lot</button><button onClick={() => notify("Viewing requests are not available online yet.")}>⌁ Arrange viewing</button></div>
-            <div className="description"><h3>About this lot</h3><p>{selected.description}</p><div className="documentChips"><span>Seller-submitted asset</span></div></div>
-            <div className="bidHistory"><h3>Recent activity</h3>{data.recentBids.filter((event) => event.auction_id === selected.id).slice(0,4).map((event,i) => <div key={`${event.created_at}-${i}`}><span><i>{event.initials}</i> Preview bidder</span><b>{euro.format(event.visible_amount)}</b></div>)}{!data.recentBids.some((event) => event.auction_id === selected.id) && <p>Bid history is available to signed-in participants.</p>}</div>
+            <div className="description"><h3>About this lot</h3><p>{selected.description}</p></div>
           </div>
+        </div>
         </div>
       </div>}
 
       {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><h2>Your Irkanti account</h2><p>Register or sign in securely with your own email address. Complete buyer onboarding and identity verification before bidding.</p><a className="goldButton" href="/account">Register or sign in →</a></div></div>}
 
 
-      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Preview information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> MARKETPLACE INFORMATION</p><h2>{information === "privacy" ? "Your personal data" : "Local preferences"}</h2><p>{information === "privacy" ? "Individual account data and private seller documents are stored in Supabase. Documents are accessible to their owner and authorised administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. Upload only documents relevant to verification or your listing." : "Secure account access uses essential session cookies. Shared preview profiles have been retired. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
+      {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Marketplace information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> MARKETPLACE INFORMATION</p><h2>{information === "privacy" ? "Your personal data" : "Local preferences"}</h2><p>{information === "privacy" ? "Individual account data and private identity documents are stored in Supabase. Documents are accessible to their owner and authorised administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. Upload only documents relevant to your identity verification." : "Secure account access uses essential session cookies. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}
       {toast && <div className="toast" role="status"><span>◇</span>{toast}</div>}
     </main>
   );

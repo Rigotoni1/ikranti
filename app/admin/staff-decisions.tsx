@@ -14,8 +14,8 @@ export const decisionLabels: Record<string, string> = {
   reinstate: "Reinstate account",
 };
 
-export function StaffDecisions({ user, documents, onboarding, application, busy, onBusy, onSaved }: {
-  user: Row; documents: Row[]; onboarding: Row[]; application: Row | null;
+export function StaffDecisions({ user, documents, onboarding, busy, onBusy, onSaved }: {
+  user: Row; documents: Row[]; onboarding: Row[];
   busy: boolean; onBusy: (busy: boolean) => void; onSaved: () => Promise<void>;
 }) {
   const [action, setAction] = useState("");
@@ -37,15 +37,13 @@ export function StaffDecisions({ user, documents, onboarding, application, busy,
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const selectedId = documentId || String(ids[0]?.id || "");
   const document = ids.find(d => d.id === selectedId);
-  const approval = action === "verify_buyer" || action === "approve_seller";
+  const approval = action === "verify_buyer";
   const access = action === "suspend" || action === "reinstate";
   const verifiedUsers = matches?.query === identitySearch ? matches.users : [];
   const searching = identitySearch.trim().length >= 2 && matches?.query !== identitySearch;
-  const setup = onboarding.find(o => o.account_type === (action === "approve_seller" ? "seller" : "buyer"));
+  const setup = onboarding.find(o => o.account_type === "buyer");
   const details = (setup?.details || {}) as Row;
-  const businessDocuments = documents.filter(d => d.kind === "business" && !d.auction_id);
-  const businessRequired = action === "approve_seller" && !!application?.business_name;
-  const evidenceOpened = opened.includes(selectedId) && (!businessRequired || businessDocuments.some(d => opened.includes(String(d.id))));
+  const evidenceOpened = opened.includes(selectedId);
 
   useEffect(() => {
     if (match !== "linked" || identitySearch.trim().length < 2) return;
@@ -59,22 +57,20 @@ export function StaffDecisions({ user, documents, onboarding, application, busy,
   }, [identitySearch, match, user.id]);
   const options = [
     ...(user.buyer_role && !user.identity_approved ? ["verify_buyer", "request_buyer_changes"] : []),
-    ...(application && user.seller_status !== "approved" ? ["approve_seller", "request_seller_changes", "reject_seller"] : []),
     user.suspended ? "reinstate" : "suspend",
   ];
   const checks = approval ? [
     ["Email verified", !!user.email_verified],
     ["Account active", !user.suspended],
-    [action === "verify_buyer" ? "Buyer setup complete" : "Seller setup complete", !!(action === "verify_buyer" ? user.buyer_complete : user.seller_complete)],
+    ["Buyer setup complete", !!user.buyer_complete],
     ["Identity document submitted", !!document],
-    ...(action === "approve_seller" && application?.business_name ? [["Business document submitted", documents.some(d => d.kind === "business" && !d.auction_id)]] : []),
   ] as [string, boolean][] : [];
   const ready = checks.every(([, ok]) => ok);
 
   function choose(value: string) {
     setAction(value); setConfirmed(false); setMessage(""); setFailed(false); setSaved(false);
     setNote(value === "verify_buyer" ? "Identity document reviewed and matched to the account details."
-      : value === "approve_seller" ? "Seller details and supporting documents reviewed and approved." : "");
+      : "");
     attempt.current = null;
   }
 
@@ -129,7 +125,7 @@ export function StaffDecisions({ user, documents, onboarding, application, busy,
       <fieldset disabled={busy}>
         <legend>{decisionLabels[action]}</legend>
         {approval && <>
-          <dl className="reviewAccountDetails">{Object.entries({"Legal name":application&&action==="approve_seller"?application.legal_name:details.legal_name,"Address":application&&action==="approve_seller"?application.address:details.address,"Phone":details.phone,...(businessRequired?{"Business name":application?.business_name,"Registration number":application?.registration_number}:{})}).map(([title,value])=><div key={title}><dt>{title}</dt><dd>{String(value||"Not provided")}</dd></div>)}</dl>
+          <dl className="reviewAccountDetails">{Object.entries({"Legal name":details.legal_name,"Address":details.address,"Phone":details.phone}).map(([title,value])=><div key={title}><dt>{title}</dt><dd>{String(value||"Not provided")}</dd></div>)}</dl>
           <ul className="decisionChecklist">{checks.map(([title, ok]) => <li key={title}><span className={ok ? "checkReady" : "checkMissing"}>{ok ? "✓ Ready" : "Needed"}</span> {title}</li>)}</ul>
           {!ready && <p className="portalMessage">The user must complete the items marked “Needed” before approval. You can request changes instead.</p>}
           {ids.length > 0 && <div className="reviewEvidence">
@@ -137,7 +133,6 @@ export function StaffDecisions({ user, documents, onboarding, application, busy,
               {ids.map(d => <option key={String(d.id)} value={String(d.id)}>ID uploaded {new Date(String(d.created_at)).toLocaleString("en-MT")}</option>)}
             </select></label>
             <button type="button" onClick={() => { if (document) void openDocument(document); }}>Open private ID ↗</button>
-            {businessRequired && businessDocuments.map(d => <button key={String(d.id)} type="button" onClick={() => void openDocument(d)}>Open business document · {new Date(String(d.created_at)).toLocaleDateString("en-MT")} ↗</button>)}
             {privateLink && <a href={privateLink.url} target="_blank" rel="noopener noreferrer" onClick={e => {
               if (privateLink.expires <= Date.now()) { e.preventDefault(); setPrivateLink(null); setMessage("Private link expired. Open the document again for a new link."); return; }
               setOpened(previous => [...new Set([...previous, privateLink.id])]);
@@ -147,23 +142,23 @@ export function StaffDecisions({ user, documents, onboarding, application, busy,
           {user.identity_approved ? <p>Identity is already approved. Its existing account link will be kept.</p> : <>
             <label>Does this person already have a verified account?<select required value={match} onChange={e => { setMatch(e.target.value); setLinkedUser(""); setConfirmed(false); }}>
               <option value="">Choose after checking their details</option><option value="new">No — this is their first verified account</option><option value="linked">Yes — link to their existing verified account</option>
-            </select><small>Check the name and identity evidence, not just the email address. Linked accounts cannot bid on their own seller listings.</small></label>
+            </select><small>Check the name and identity evidence, not just the email address. Linked accounts cannot bid on their own assets.</small></label>
             {match === "linked" && <><label>Find the existing verified account<input type="search" maxLength={160} value={identitySearch} placeholder="Search name or email (at least 2 characters)" onChange={e => { setIdentitySearch(e.target.value); setLinkedUser(""); setConfirmed(false); }}/></label>
             <p role="status">{searching?"Searching verified accounts…":matches?.query===identitySearch&&matches.error?matches.error:identitySearch.trim().length>=2&&!verifiedUsers.length?"No matching verified accounts. Try another name or email.":"Compare the identity evidence before linking; a similar name alone is not enough."}</p>
             <label>Existing verified account<select required value={linkedUser} onChange={e => {setLinkedUser(e.target.value);setConfirmed(false);}}>
               <option value="">Choose the same person’s verified account</option>{verifiedUsers.map(u => <option value={String(u.id)} key={String(u.id)}>{String(u.name)} · {String(u.email)}</option>)}
             </select><small>Search covers all verified accounts; up to 20 matches are shown. If the correct account is not listed, do not choose “first account”.</small></label></>}
           </>}
-          <label className="checkLabel"><input type="checkbox" required checked={confirmed} disabled={!evidenceOpened} onChange={e => setConfirmed(e.target.checked)} />I reviewed this ID, matched it to the account details and checked any business evidence and existing account link.</label>
-          {!evidenceOpened && <small>Open the selected private ID and any required business evidence before confirming your review.</small>}
+          <label className="checkLabel"><input type="checkbox" required checked={confirmed} disabled={!evidenceOpened} onChange={e => setConfirmed(e.target.checked)} />I reviewed this ID, matched it to the account details and checked any existing account link.</label>
+          {!evidenceOpened && <small>Open the selected private ID before confirming your review.</small>}
         </>}
         {!approval && <label>Reason template<select defaultValue="" onChange={e => { if (e.target.value) setNote(e.target.value); }}>
           <option value="">Write your own or choose a starting point</option>
-          {["Please upload a clearer copy of your identity document.", "Please make sure your legal name matches your identity document.", "Supporting business information is required.", "Please complete your account setup.", "Account access paused pending a staff review.", "Review completed. Account access restored."].map(value => <option key={value}>{value}</option>)}
+          {["Please upload a clearer copy of your identity document.", "Please make sure your legal name matches your identity document.", "Please complete your account setup.", "Account access paused pending a staff review.", "Review completed. Account access restored."].map(value => <option key={value}>{value}</option>)}
         </select></label>}
         <label>Message to the user<textarea required minLength={5} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} /><small>This is sent to the user and saved in the audit trail. Do not include document numbers or other sensitive ID details.</small></label>
         {access && <label className="checkLabel"><input type="checkbox" required checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm {action === "suspend" ? "suspending" : "restoring"} access for {String(user.email)}.</label>}
-        <button className={action === "suspend" || action === "reject_seller" ? "dangerButton" : "goldButton"} disabled={!ready || (approval && (!confirmed || !evidenceOpened))}>{busy ? "Saving…" : decisionLabels[action]}</button>
+        <button className={action === "suspend" ? "dangerButton" : "goldButton"} disabled={!ready || (approval && (!confirmed || !evidenceOpened))}>{busy ? "Saving…" : decisionLabels[action]}</button>
         <p className="muted">Unsaved entries stay only while this user profile is open.</p>
       </fieldset>
     </form>}

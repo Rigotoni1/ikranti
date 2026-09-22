@@ -31,7 +31,7 @@ test('verification has direct automatic upload, no defer/submit buttons and unch
  const h=harness({details:{adult:'true'}});const html=h.html();
  assert.match(html,/Selecting a file uploads it immediately/);
  assert.match(html,/I confirm I have read the/);
- assert.match(html,/href="\/terms\/2026-09-22" target="_blank"/);
+ assert.match(html,/href="\/terms\/2026-09-22\.1" target="_blank"/);
  assert.doesNotMatch(html,/Maybe later|Submit for review|I confirm I am at least 18/);
  assert.equal(h.checkbox().props.checked,false);assert.equal(h.continue().props.disabled,true);
 });
@@ -42,9 +42,9 @@ test('saved account documents are reused; property and business documents cannot
  h.checkbox().props.onChange({target:{checked:true}});assert.equal(h.continue().props.disabled,false);
  const unrelated=harness({documents:[{kind:'identity',auction_id:'a-lot'}]});
  unrelated.checkbox().props.onChange({target:{checked:true}});assert.equal(unrelated.continue().props.disabled,true);
- const business=harness({type:'seller',details:{business_name:'Example business'},documents:[{kind:'identity'}]});
+ const business=harness({details:{business_name:'Example business'},documents:[{kind:'business'}]});
  business.checkbox().props.onChange({target:{checked:true}});assert.equal(business.continue().props.disabled,true);
- assert.match(business.html(),/Business registration required/);
+ assert.match(business.html(),/ID document required/);
 });
 
 test('selecting a file uploads immediately, blocks continuation in flight and records terms only on continue',async t=>{
@@ -73,12 +73,12 @@ test('failed or invalid uploads never unlock continuation or claim success',asyn
 });
 
 test('terms page identifies the operator and both payment deadlines without waiving consumer rights',()=>{
- const {default:TermsPage}=load('../app/terms/2026-09-22/page.tsx');const html=renderToStaticMarkup(TermsPage());
+ const {default:TermsPage}=load('../app/terms/2026-09-22.1/page.tsx');const html=renderToStaticMarkup(TermsPage());
  assert.match(html,/Luca Arrigo, Ogirra, Triq Il Kaffis, Swieqi/);
  assert.match(html,/10% of the final winning price on the day the auction closes/);
  assert.match(html,/within 30 calendar days after the closing date/);
  assert.match(html,/These terms do not exclude mandatory consumer protections/);
  assert.match(html,/separate legal documents/);
- const migration=readFileSync(new URL('../supabase/migrations/20260922120117_onboarding_terms_acceptance.sql',import.meta.url),'utf8');
+ const migration=readFileSync(new URL('../supabase/migrations/20260922134003_buyer_only_staff_inventory.sql',import.meta.url),'utf8');
  assert.ok(migration.includes(`current_terms constant text:='${terms.TERMS_VERSION}'`));
 });

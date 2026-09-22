@@ -32,12 +32,12 @@ test('buyer confirmation is a dedicated screen with clear next steps and no pass
   assert.doesNotMatch(html, /<form|type="password"|Delivery depends on email setup/);
 });
 
-test('seller confirmation explains seller-specific next steps and separate approval', t => {
+test('legacy seller intent cannot reopen a seller confirmation journey', t => {
   t.mock.method(Date, 'now', () => now);
   const html = render('seller');
-  assert.match(html, /Complete your seller profile/);
-  assert.match(html, /supporting documents for review/);
-  assert.match(html, /Identity and seller approvals are separate reviews/);
+  assert.match(html, /Complete your buyer profile/);
+  assert.match(html, /submit your ID for review before bidding/);
+  assert.doesNotMatch(html, /seller|selling/);
 });
 
 test('resend starts with a cooldown and becomes available after a minute', t => {

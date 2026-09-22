@@ -67,7 +67,7 @@ export function CheckEmail({ pending, onResend, onCheck, onEditEmail, onSignIn }
     <ol className="verificationSteps">
       <li><strong>Open the email from Irkanti</strong><span>Check your inbox, and your spam or junk folder if you don’t see it.</span></li>
       <li><strong>Follow the verification link</strong><span>This confirms your email address and brings you back to Irkanti.</span></li>
-      <li><strong>Complete your {pending.accountType} profile</strong><span>{pending.accountType === "buyer" ? "Choose your interests and submit your ID for review before bidding." : "Add your seller details and supporting documents for review."}</span></li>
+      <li><strong>Complete your buyer profile</strong><span>Choose your interests and submit your ID for review before bidding.</span></li>
     </ol>
 
     <div className="verificationActions">
@@ -77,6 +77,6 @@ export function CheckEmail({ pending, onResend, onCheck, onEditEmail, onSignIn }
     {feedback && <p className="portalMessage verificationFeedback" role={error ? "alert" : "status"}>{feedback}</p>}
     <div className="verificationHelp"><h2>No email yet?</h2><p>Allow a few minutes for it to arrive. Check the address above and your spam folder, then request a new email if needed. If you already have an account, sign in instead.</p></div>
     <p className="verificationSignIn">Already verified? <button type="button" className="verificationTextButton" disabled={!!busy} onClick={onSignIn}>Sign in →</button></p>
-    <p className="muted verificationPrivacy">Email verification confirms your address. Identity and seller approvals are separate reviews.</p>
+    <p className="muted verificationPrivacy">Email verification confirms your address. Your identity is reviewed separately before bidding.</p>
   </section>;
 }

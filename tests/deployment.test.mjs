@@ -21,7 +21,7 @@ before(async () => {
 });
 after(() => server?.kill('SIGTERM'));
 
-test('home page renders the auction marketplace and its preview status', async () => {
+test('home page renders the auction marketplace with buyer-only navigation', async () => {
   const response = await fetch(base);
   assert.equal(response.status,200);
   const html=await response.text();
@@ -31,7 +31,8 @@ test('home page renders the auction marketplace and its preview status', async (
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
   assert.doesNotMatch(html, /Approved seller listings/);
   assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
-  assert.match(html, /Sell an asset/);
+  assert.doesNotMatch(html, /Sell an asset|Sell with Irkanti|Seller account/);
+  assert.match(html, /Your watchlist/);
 });
 
 test('catalogue is public and never accepts a browser-selected account', async () => {
@@ -79,7 +80,7 @@ test('secure account portal is available',async()=>{
 });
 
 test('terms and the immutable consent version are publicly available',async()=>{
-  for (const path of ['/terms','/terms/2026-09-22']) {
+  for (const path of ['/terms','/terms/2026-09-22','/terms/2026-09-22.1']) {
     const response=await fetch(`${base}${path}`);
     assert.equal(response.status,200);
     const html=await response.text();
