@@ -171,7 +171,7 @@ export default function Home() {
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="#how">How to bid</a><a href="/account?tab=bids">My bids</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
-          <a className="goldButton" href="/account">Account</a>
+          <a className="goldButton" href="/account">{signedIn ? "Account" : "Sign in"}</a>
         </div>
       </header>
 

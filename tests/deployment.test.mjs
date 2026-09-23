@@ -34,6 +34,7 @@ test('home page renders the auction marketplace with buyer-only navigation', asy
   assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
   assert.doesNotMatch(html, /Sell an asset|Sell with Irkanti|Seller account/);
   assert.match(html, /Your watchlist/);
+  assert.match(html, /class="goldButton" href="\/account">Sign in<\/a>/);
 });
 
 test('catalogue is public and never accepts a browser-selected account', async () => {

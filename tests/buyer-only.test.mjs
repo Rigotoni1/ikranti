@@ -16,6 +16,22 @@ function load(file, overrides = {}) {
 }
 const link = ({children, ...props}) => createElement('a', props, children);
 const brand = load('../app/brand-logo.tsx');
+test('marketplace header shows Sign in for guests and Account for signed-in users', () => {
+  for (const signedIn of [null, false, true]) {
+    let stateIndex = 0;
+    const { default: Home } = load('../app/page.tsx', {
+      react: { useState: initial => [stateIndex++ === 0 ? signedIn : initial, () => {}], useEffect: () => {}, useMemo: fn => fn(), useRef: value => ({ current: value }) },
+      '../lib/supabase/browser': { browserClient: () => ({}) },
+      './brand-logo': brand, './bid-history': { BidHistory: () => null },
+      './use-bid-history': { useBidHistory: () => ({ history: null }) },
+      './use-auction-ended': { useAuctionEnded: () => false },
+    });
+    const html = renderToStaticMarkup(createElement(Home));
+    const header = html.match(/<header[\s\S]*?<\/header>/)?.[0];
+    assert.ok(header);
+    assert.ok(header.includes(`class="goldButton" href="/account">${signedIn ? 'Account' : 'Sign in'}</a>`));
+  }
+});
 function account(overrides = {}) {
   const names = [...source('../app/account/page.tsx').matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
   let cursor = 0;
