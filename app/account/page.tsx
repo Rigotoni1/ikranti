@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import Link from "next/link";
+import { BrandLogo } from "../brand-logo";
 import { browserClient } from "@/lib/supabase/browser";
 import "./portal.css";
 import { Onboarding, AccountType, OnboardingRecord } from "./onboarding";
@@ -187,7 +188,7 @@ export default function Account() {
   const catalogueView=catalogue.filter(l=>watched.includes(String(l.id)));
 
   return <main className="portal">
-    <header className="portalHeader"><Link href="/" className="brand">IRKANTI</Link><Link className="activeAccount" href="/account?tab=settings" onClick={()=>setTab("Settings")}>{user?(activeReady?"Your account":"Account setup"):"Your account"}</Link>{profile?.role==="admin"&&<Link href="/admin">Administration →</Link>}{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
+    <header className="portalHeader"><Link href="/" className="brand" aria-label="Irkanti home"><BrandLogo eager /></Link><Link className="activeAccount" href="/account?tab=settings" onClick={()=>setTab("Settings")}>{user?(activeReady?"Your account":"Account setup"):"Your account"}</Link>{profile?.role==="admin"&&<Link href="/admin">Administration →</Link>}{user&&<button disabled={busy} onClick={()=>void run(async()=>{const {error}=await client.auth.signOut();if(error)throw error;setDocuments([]);setNotifications([]);setOrders([]);},"Signed out")}>Sign out</button>}</header>
     {!pendingVerification&&<div className="portalNotice">{trading?"Live marketplace":"Bidding is currently paused"} · <span className={connected?"online":"offline"}>{connected?"Live updates connected":"Reconnecting live updates…"}</span></div>}
     <div className={`portalBody${pendingVerification?" verificationBody":""}`}>
       {!pendingVerification&&<><p className="eyebrow">MALTA · EXCEPTIONAL ASSETS</p><h1>{user?`Welcome, ${profile?.name||"member"}`:"Your next chapter starts here."}</h1></>}
@@ -226,7 +227,7 @@ export default function Account() {
         </div>{adminInvite&&profile?.role!=="admin"&&<div className="portalPanel"><h2>Administrator invitation</h2><p>Verify your email first. This invitation is checked securely against the verified account.</p><button className="goldButton" disabled={busy||!user.email_confirmed_at} onClick={()=>void run(async()=>{await rpc("ir_claim_admin");},"Administrator access activated")}>Accept administrator invitation</button></div>}</section>}
 
       </>}
-    </div><footer className="portalFooter">IRKANTI · Malta’s high-value auction marketplace · <Link href="/">Return to homepage</Link></footer>
+    </div><footer className="portalFooter"><Link className="brand" href="/" aria-label="Irkanti home"><BrandLogo /></Link><p>Malta’s high-value auction marketplace · <Link href="/">Return to homepage</Link></p></footer>
   </main>;
 }
 import { listingImageUrl } from "@/lib/listing-image";

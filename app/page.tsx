@@ -4,6 +4,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { browserClient } from "../lib/supabase/browser";
 import { BidHistory } from "./bid-history";
+import { BrandLogo, BrandMark } from "./brand-logo";
 import { useBidHistory } from "./use-bid-history";
 import { useAuctionEnded } from "./use-auction-ended";
 
@@ -38,8 +39,6 @@ function Countdown({ endAt }: { endAt:string }) {
   }, [endAt]);
   return <span>{label}</span>;
 }
-
-function Mark() { return <span className="mark" aria-hidden="true">I</span>; }
 
 export default function Home() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -168,7 +167,7 @@ export default function Home() {
   return (
     <main id="top">
       <header className="nav shell">
-        <a className="brand" href="#top" aria-label="Irkanti home"><Mark/><span>IRKANTI</span></a>
+        <a className="brand" href="#top" aria-label="Irkanti home"><BrandLogo eager /></a>
         <nav className="navlinks" aria-label="Main navigation"><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="#how">How to bid</a><a href="/account?tab=bids">My bids</a></nav>
         <div className="navActions">
           <button className="searchIcon" onClick={() => document.getElementById("auction-search")?.focus()} aria-label="Search">⌕</button>
@@ -210,7 +209,7 @@ export default function Home() {
             </div>
           </article>)}
         </div>
-        {data.auctions.length > 0 && filtered.length === 0 && <div className="emptyState"><Mark/><h3>No matching lots</h3><p>Try another category or a broader search.</p></div>}
+        {data.auctions.length > 0 && filtered.length === 0 && <div className="emptyState"><BrandMark/><h3>No matching lots</h3><p>Try another category or a broader search.</p></div>}
       </section>
 
       <section className="categorySection" id="categories">
@@ -241,7 +240,7 @@ export default function Home() {
 
       <section className="numbers"><div className="shell"><div><strong>{data.auctions.length}</strong><span>LIVE AUCTIONS</span></div><div><strong>EUR</strong><span>BID CURRENCY</span></div><div><strong>2 min</strong><span>ANTI-SNIPE PROTECTION</span></div><div><strong>6</strong><span>ASSET CATEGORIES</span></div></div></section>
 
-      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top"><Mark/><span>IRKANTI</span></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Team-managed auctions for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="/account?tab=watchlist">Your watchlist</a><a href="#how">How it works</a></div><div><h4>Buyer help</h4><a href="/account?tab=settings">Account & verification</a><a href="/account?tab=bids">My bids</a><a href="/terms">Bidding & payment terms</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><a href="/terms">Terms & Conditions</a><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
+      <footer><div className="shell footerTop"><div className="footerBrand"><a className="brand" href="#top" aria-label="Irkanti home"><BrandLogo /></a><p>Malta’s trusted marketplace for exceptional assets.</p><small>Team-managed auctions for the Maltese market.</small></div><div><h4>Marketplace</h4><a href="#auctions">Live auctions</a><a href="#categories">Categories</a><a href="/account?tab=watchlist">Your watchlist</a><a href="#how">How it works</a></div><div><h4>Buyer help</h4><a href="/account?tab=settings">Account & verification</a><a href="/account?tab=bids">My bids</a><a href="/terms">Bidding & payment terms</a></div><div><h4>Irkanti</h4><span>Built for the Maltese market</span><span>Support details coming at launch</span></div></div><div className="shell footerBottom"><span>© 2026 Irkanti · Auction marketplace</span><div><a href="/terms">Terms & Conditions</a><button onClick={() => setInformation("privacy")}>Privacy</button><button onClick={() => setInformation("cookies")}>Cookies</button></div><span>EN · EUR</span></div></footer>
 
       {selected && <div className="overlay auctionOverlay" role="dialog" aria-modal="true" aria-label={selected.title}>
         <div className="auctionRoom">
@@ -264,7 +263,7 @@ export default function Home() {
         </div>
       </div>}
 
-      {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><Mark/><h2>Your Irkanti account</h2><p>Register or sign in securely with your own email address. Complete buyer onboarding and identity verification before bidding.</p><a className="goldButton" href="/account">Register or sign in →</a></div></div>}
+      {authOpen && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Sign in"><div className="authModal"><button className="close" onClick={() => setAuthOpen(false)} aria-label="Close">×</button><BrandMark/><h2>Your Irkanti account</h2><p>Register or sign in securely with your own email address. Complete buyer onboarding and identity verification before bidding.</p><a className="goldButton" href="/account">Register or sign in →</a></div></div>}
 
 
       {information && <div className="overlay centered" role="dialog" aria-modal="true" aria-label="Marketplace information"><div className="authModal"><button className="close" onClick={() => setInformation(null)} aria-label="Close">×</button><p className="eyebrow dark"><span/> MARKETPLACE INFORMATION</p><h2>{information === "privacy" ? "Your personal data" : "Local preferences"}</h2><p>{information === "privacy" ? "Individual account data and private identity documents are stored in Supabase. Documents are accessible to their owner and authorised administrators, not other members. Listing photographs are public. The operator must publish its final privacy notice, retention policy and support contact before onboarding the public. Upload only documents relevant to your identity verification." : "Secure account access uses essential session cookies. No advertising cookies are required."}</p><button className="goldButton" onClick={() => setInformation(null)}>Understood</button></div></div>}

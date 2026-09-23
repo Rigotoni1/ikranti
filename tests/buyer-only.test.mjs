@@ -15,12 +15,13 @@ function load(file, overrides = {}) {
   return module.exports;
 }
 const link = ({children, ...props}) => createElement('a', props, children);
+const brand = load('../app/brand-logo.tsx');
 function account(overrides = {}) {
   const names = [...source('../app/account/page.tsx').matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
   let cursor = 0;
   const { default: Account } = load('../app/account/page.tsx', {
     react: { useState: value => [Object.hasOwn(overrides, names[cursor]) ? overrides[names[cursor++]] : (cursor++, value), () => {}], useCallback: fn => fn, useRef: value => ({ current: value }), useEffect: () => {} },
-    'next/link': { default: link }, '@/lib/supabase/browser': { browserClient: () => ({}) },
+    'next/link': { default: link }, '../brand-logo': brand, '@/lib/supabase/browser': { browserClient: () => ({}) },
     '@/lib/listing-image': { listingImageUrl: path => path }, './check-email': { CheckEmail: () => null }, './onboarding': { Onboarding: () => createElement('p', null, 'Buyer onboarding') },
     './bid-activity': { default: () => createElement('section', {'aria-label':'My bids'}, 'Live bid activity') },
   });

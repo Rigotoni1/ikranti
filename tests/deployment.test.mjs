@@ -27,7 +27,8 @@ test('home page renders the auction marketplace with buyer-only navigation', asy
   const html=await response.text();
   assert.match(html, /Remarkable assets/);
   assert.match(html, /Irkanti — Malta/);
-  assert.match(html, /IRKANTI/);
+  assert.match(html, /aria-label="Irkanti home"/);
+  assert.match(html, /src="\/brand\/irkanti-wordmark-light\.svg"/);
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
   assert.doesNotMatch(html, /Approved seller listings/);
   assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
@@ -77,6 +78,31 @@ test('secure account portal is available',async()=>{
   assert.equal(response.status,200);
   assert.match(await response.text(),/class="activeAccount"[^>]*>Your account/);
   assert.match(response.headers.get('cache-control'),/no-store/);
+});
+
+test('brand assets and theme-aware site icons are available',async()=>{
+  for (const path of ['/favicon.svg','/brand/irkanti-wordmark-light.svg','/brand/irkanti-wordmark-dark.svg','/brand/irkanti-favicon-dark.svg','/brand/irkanti-favicon-light.svg']) {
+    const response=await fetch(`${base}${path}`);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'),/image\/svg\+xml/);
+    const svg=await response.text();
+    assert.match(svg,/<svg/);
+    assert.doesNotMatch(svg,/<script|<foreignObject|https?:\/\/(?!www\.w3\.org)/);
+  }
+  for (const path of ['/brand/irkanti-favicon-dark-32.png','/brand/irkanti-favicon-dark.png']) {
+    const response=await fetch(`${base}${path}`);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'),/image\/png/);
+  }
+  const html=await (await fetch(base)).text();
+  assert.match(html,/media="\(prefers-color-scheme: light\)"/);
+  assert.match(html,/media="\(prefers-color-scheme: dark\)"/);
+  assert.match(html,/rel="apple-touch-icon"/);
+  for (const path of ['/account','/account/bids','/terms']) {
+    const page=await (await fetch(`${base}${path}`)).text();
+    assert.match(page,/aria-label="Irkanti home"/);
+    assert.match(page,/src="\/brand\/irkanti-wordmark-light\.svg"/);
+  }
 });
 
 test('terms and the immutable consent version are publicly available',async()=>{

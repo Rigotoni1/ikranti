@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "../terms.css";
+import { BrandLogo } from "../../brand-logo";
 
 export const metadata: Metadata = {
  title: "Terms & Conditions · Irkanti",
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
 // Preserve this version after publication. Do not change the text behind existing consent records.
 export default function TermsPage() {
  return <div className="termsPage">
-  <header className="termsHeader"><a className="termsBrand" href="/">IRKANTI</a><a href="/account">Account</a></header>
+  <header className="termsHeader"><Link className="brand" href="/" aria-label="Irkanti home"><BrandLogo eager /></Link><a href="/account">Account</a></header>
   <main className="termsContent">
    <p className="termsEyebrow">VERSION 2026-09-22 · 22 SEPTEMBER 2026</p>
    <h1>Terms & Conditions</h1>
@@ -31,6 +33,6 @@ export default function TermsPage() {
    <section><h2>8. Changes to these terms</h2><p>Material changes will be published as a new version and require fresh acceptance where applicable. New terms do not retrospectively change a concluded sale or turn earlier account activity into acceptance. Keep a copy of the version you agree to and the terms of the particular lot.</p></section>
    <p className="termsReturn"><a href="/account">Return to your account</a></p>
   </main>
-  <footer className="termsFooter">Irkanti · Malta · <a href="/">Marketplace</a></footer>
+  <footer className="termsFooter"><Link className="brand" href="/" aria-label="Irkanti home"><BrandLogo /></Link><p>Malta · <Link href="/">Marketplace</Link></p></footer>
  </div>;
 }

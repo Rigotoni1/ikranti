@@ -73,7 +73,7 @@ test('failed or invalid uploads never unlock continuation or claim success',asyn
 });
 
 test('terms page identifies the operator and both payment deadlines without waiving consumer rights',()=>{
- const {default:TermsPage}=load('../app/terms/2026-09-22.1/page.tsx');const html=renderToStaticMarkup(TermsPage());
+ const {default:TermsPage}=load('../app/terms/2026-09-22.1/page.tsx',{'../../brand-logo':load('../app/brand-logo.tsx')});const html=renderToStaticMarkup(TermsPage());
  assert.match(html,/Luca Arrigo, Ogirra, Triq Il Kaffis, Swieqi/);
  assert.match(html,/10% of the final winning price on the day the auction closes/);
  assert.match(html,/within 30 calendar days after the closing date/);

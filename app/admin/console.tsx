@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { BrandLogo } from "../brand-logo";
 import { listingImageUrl } from "@/lib/listing-image";
 import "./dashboard.css";
 import { UserProfile, roles, identity } from "./user-profile";
@@ -90,7 +91,7 @@ export default function AdminConsole(){
  async function download(path:string){
   await run(async()=>{const {data,error}=await client.storage.from("ir-private-documents").createSignedUrl(path,60,{download:true});if(error)throw error;window.location.assign(data.signedUrl);},"Private download prepared");
  }
- return <main className="portal"><header className="portalHeader"><Link className="brand" href="/">IRKANTI</Link><span>ADMINISTRATION</span><Link href="/account">My account →</Link></header><div className="portalBody"><h1>Admin dashboard</h1><p>Staff tools · Showing the latest 200 records per section</p><button disabled={busy} onClick={()=>void run(refresh,"Staff records refreshed")}>Refresh records</button>{message&&<p className="portalMessage" role="status">{message}</p>}{!allowed?<section className="portalPanel"><p>Checking your verified administrator account and active session.</p><Link href="/account?tab=security">Account security</Link></section>:<>
+ return <main className="portal"><header className="portalHeader"><Link className="brand" href="/" aria-label="Irkanti home"><BrandLogo eager /></Link><span>ADMINISTRATION</span><Link href="/account">My account →</Link></header><div className="portalBody"><h1>Admin dashboard</h1><p>Staff tools · Showing the latest 200 records per section</p><button disabled={busy} onClick={()=>void run(refresh,"Staff records refreshed")}>Refresh records</button>{message&&<p className="portalMessage" role="status">{message}</p>}{!allowed?<section className="portalPanel"><p>Checking your verified administrator account and active session.</p><Link href="/account?tab=security">Account security</Link></section>:<>
 
 <div className="portalLinks"><button className="goldButton" disabled={busy} aria-expanded={creating} onClick={()=>setCreating(!creating)}>{creating?"Close new listing":"Create listing"}</button></div>
 {creating&&<section className="portalPanel"><ListingEditor busy={busy} onBusy={setBusy} onSaved={async(id)=>{await refresh();choose("listings");setSelected(id);setCreating(false);}}/></section>}
