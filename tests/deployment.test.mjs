@@ -28,7 +28,7 @@ test('home page renders the auction marketplace with buyer-only navigation', asy
   assert.match(html, /Remarkable assets/);
   assert.match(html, /Irkanti — Malta/);
   assert.match(html, /aria-label="Irkanti home"/);
-  assert.match(html, /src="\/brand\/irkanti-wordmark-light\.svg"/);
+  assert.match(html, /src="\/brand\/irkanti-wordmark-light\.svg\?v=2"/);
   assert.doesNotMatch(html, /Ikranti|IKRANTI/);
   assert.doesNotMatch(html, /Approved seller listings/);
   assert.doesNotMatch(html, /Rolex Cosmograph Daytona|Palazzo with Grand Harbour Views/);
@@ -101,7 +101,7 @@ test('brand assets and theme-aware site icons are available',async()=>{
   for (const path of ['/account','/account/bids','/terms']) {
     const page=await (await fetch(`${base}${path}`)).text();
     assert.match(page,/aria-label="Irkanti home"/);
-    assert.match(page,/src="\/brand\/irkanti-wordmark-light\.svg"/);
+    assert.match(page,/src="\/brand\/irkanti-wordmark-light\.svg\?v=2"/);
   }
 });
 

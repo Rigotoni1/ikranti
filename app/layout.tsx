@@ -18,11 +18,11 @@ export async function generateMetadata(): Promise<Metadata> {
     description,
     icons: {
       icon: [
-        { url: "/brand/irkanti-favicon-dark-32.png", type: "image/png", sizes: "32x32" },
-        { url: "/brand/irkanti-favicon-dark.svg", type: "image/svg+xml", sizes: "any", media: "(prefers-color-scheme: light)" },
-        { url: "/brand/irkanti-favicon-light.svg", type: "image/svg+xml", sizes: "any", media: "(prefers-color-scheme: dark)" },
+        { url: "/brand/irkanti-favicon-dark-32.png?v=2", type: "image/png", sizes: "32x32" },
+        { url: "/brand/irkanti-favicon-dark.svg?v=2", type: "image/svg+xml", sizes: "any", media: "(prefers-color-scheme: light)" },
+        { url: "/brand/irkanti-favicon-light.svg?v=2", type: "image/svg+xml", sizes: "any", media: "(prefers-color-scheme: dark)" },
       ],
-      apple: [{ url: "/brand/irkanti-favicon-dark.png", type: "image/png", sizes: "512x512" }],
+      apple: [{ url: "/brand/irkanti-favicon-dark.png?v=2", type: "image/png", sizes: "512x512" }],
     },
     openGraph: { title, description, type: "website", siteName: "Irkanti", images: [{ url:image, width:1200, height:630, alt:"Irkanti — remarkable assets, exceptional outcomes" }] },
     twitter: { card:"summary_large_image", title, description, images:[image] },

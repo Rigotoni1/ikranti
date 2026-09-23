@@ -6,10 +6,10 @@ type BrandTone = "light" | "dark";
 export function BrandLogo({ tone = "light", eager = false }: { tone?: BrandTone; eager?: boolean }) {
   return <Image
     className="brandLogo"
-    src={`/brand/irkanti-wordmark-${tone}.svg`}
+    src={`/brand/irkanti-wordmark-${tone}.svg?v=2`}
     alt="Irkanti"
-    width={3100}
-    height={890}
+    width={976}
+    height={318}
     loading={eager ? "eager" : "lazy"}
     unoptimized
   />;
@@ -18,11 +18,11 @@ export function BrandLogo({ tone = "light", eager = false }: { tone?: BrandTone;
 export function BrandMark({ tone = "dark" }: { tone?: BrandTone }) {
   return <Image
     className="brandMark"
-    src={`/brand/irkanti-favicon-${tone}.svg`}
+    src={`/brand/irkanti-favicon-${tone}.svg?v=2`}
     alt=""
     aria-hidden="true"
-    width={512}
-    height={512}
+    width={340}
+    height={340}
     unoptimized
   />;
 }
